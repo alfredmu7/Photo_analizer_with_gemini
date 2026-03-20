@@ -1,0 +1,113 @@
+/* ScannerTerminal.css */
+.terminal-container {
+    font-family: Arial, Helvetica, sans-serif;
+    background-color: #f4f4f4;
+    padding: 20px;
+    min-height: 100vh;
+    color: #333;
+    cursor: default !important;
+}
+
+.main-card {
+    background: white;
+    border: 1px solid #ccc;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.header-blue {
+    background-color: #005a84;
+    color: white;
+    padding: 10px 15px;
+    font-weight: bold;
+    font-size: 14px;
+    border-bottom: 1px solid #004666;
+}
+
+.action-bar {
+    padding: 15px;
+    background: #fafafa;
+    border-bottom: 1px solid #ddd;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+/* Botones estilo plataforma */
+.btn-platform {
+    background: #eeeeee;
+    border: 1px solid #ababab;
+    padding: 6px 14px;
+    cursor: pointer;
+    font-size: 13px;
+    border-radius: 2px;
+    color: #333;
+    transition: background 0.2s;
+}
+
+.btn-platform:hover:not(:disabled) {
+    background: #e0e0e0;
+    border-color: #999;
+}
+
+.btn-platform:disabled {
+    color: #bbb;
+    cursor: not-allowed;
+}
+
+/* Barra de carga */
+.progress-wrapper {
+    padding: 15px 20px;
+    background: #fff;
+    border-bottom: 1px solid #ddd;
+}
+
+.progress-track {
+    background: #eee;
+    height: 18px;
+    border: 1px solid #bbb;
+    border-radius: 2px;
+    overflow: hidden;
+    position: relative;
+}
+
+.progress-fill {
+    background: linear-gradient(to bottom, #4caf50 0%, #2e7d32 100%);
+    height: 100%;
+    transition: width 0.4s ease;
+}
+
+.progress-text {
+    font-size: 12px;
+    margin-top: 6px;
+    color: #666;
+    display: flex;
+    justify-content: space-between;
+}
+
+/* Tablas */
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.data-table th {
+    background: #f8f8f8;
+    border: 1px solid #ccc;
+    text-align: left;
+    padding: 8px 12px;
+    font-size: 13px;
+}
+
+.data-table td {
+    border: 1px solid #ccc;
+    padding: 8px 12px;
+    font-size: 13px;
+    background: #fff;
+}
+
+.row-error {
+    color: #c00;
+    background-color: #fff5f5 !important;
+}
