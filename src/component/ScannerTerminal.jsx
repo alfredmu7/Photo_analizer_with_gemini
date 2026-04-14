@@ -29,7 +29,7 @@ const ScannerTerminal = () => {
   const regexPatterns = [
     /P0*\d+L0*\d+[MD]\d+[\/-]\d+/i, // Agregado [\/-] para soportar ambos
     /P0*\d+L0*\d+[MD]\d+(-TEL|-T)?/i,
-    /\d{4,6}-[A-Z]\d{2,4}/i
+    /[A-Z0-9]{4,6}-[A-Z]\d{2,4}/i
   ];
 
   const AVG_TIME_PER_IMG = 5.2;
