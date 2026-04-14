@@ -32,6 +32,7 @@
     display: flex;
     gap: 10px;
     align-items: center;
+    flex-wrap: wrap;
 }
 
 /* Botones estilo plataforma */
@@ -53,7 +54,36 @@
 
 .btn-platform:disabled {
     color: #bbb;
+    background: #f9f9f9;
     cursor: not-allowed;
+    border-color: #ddd;
+}
+
+/* Variante para el botón de generar (verde suave tipo plataforma) */
+.btn-success {
+    background: #f0fff0;
+    border-color: #4caf50;
+    color: #2e7d32;
+}
+.btn-success:hover:not(:disabled) {
+    background: #e4f9e4;
+    border-color: #2e7d32;
+}
+
+/* Contenedor de controles de fecha */
+.stamp-controls {
+    display: flex;
+    gap: 5px;
+    align-items: center;
+}
+
+.date-picker {
+    border: 1px solid #ccc;
+    padding: 5px;
+    font-size: 12px;
+    border-radius: 2px;
+    color: #333;
+    background: #fff;
 }
 
 /* Barra de carga */
