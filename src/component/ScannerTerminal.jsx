@@ -53,7 +53,6 @@ const ScannerTerminal = () => {
       ID: found.ID,
       DISPOSITIVO: found.DISPOSITIVO || "N/A",
       UBICACION: found.UBICACION || "N/A",
-      PANEL: found.PANEL || "N/A"
     } : null;
   };
 
@@ -160,8 +159,9 @@ const ScannerTerminal = () => {
             fileName: file.name,
             originalFile: file,
             thumb: thumbUrl,
-            masterInfo: masterInfo || { ID: finalId, DISPOSITIVO: "N/A", UBICACION: "No encontrado en DB", PANEL: "N/A" }
-          });
+            isFound: !!masterInfo, // true si existe en DB, false si no
+            masterInfo: masterInfo || { ID: finalId, DISPOSITIVO: "N/A", UBICACION: "No encontrado en DB" }
+        });
           setResults([...currentResults]);
         } else {
           throw new Error("ID no legible en la imagen");
@@ -245,7 +245,6 @@ const ScannerTerminal = () => {
       'ID Detectado': res.id,
       'Dispositivo': res.masterInfo?.DISPOSITIVO,
       'Ubicación': res.masterInfo?.UBICACION,
-      'Panel': res.masterInfo?.PANEL,
       'Archivo Original': res.fileName,
       'Fecha Procesado': new Date().toLocaleString()
     }));
@@ -276,7 +275,7 @@ const ScannerTerminal = () => {
     <div className="terminal-container">
       <div className="main-card">
         <div className="header-blue">
-          FADS SCANNER AI {dbReady ? '🟢 ONLINE' : '🔘 LOADING DB...'}
+          IDs Analizer {dbReady ? '🟢 Online' : '🔘 Loading DB...'}
         </div>
         
         <div className="action-bar" style={{ display: 'flex', gap: '15px', flexWrap: 'wrap', padding: '20px' }}>
@@ -321,15 +320,22 @@ const ScannerTerminal = () => {
             <div className="header-blue" style={{ backgroundColor: '#005a84', fontSize: '12px' }}>Detected Devices ({results.length})</div>
             <div style={{ maxHeight: '600px', overflowY: 'auto', borderRight: '1px solid #ccc' }}>
               <table className="data-table">
-                <thead><tr><th>Thumb</th><th>Detected ID</th><th>Location / Master Data</th></tr></thead>
+                <thead><tr><th>Photo</th><th>Detected ID</th><th>Location</th></tr></thead>
                 <tbody>
-                  {results.map((res, i) => (
+                 {results.map((res, i) => (
                     <tr key={i}>
-                      <td><img src={res.thumb} style={{ width: '50px', height: '50px', objectFit: 'cover', borderRadius: '4px' }} alt="thumb" /></td>
-                      <td style={{ color: '#005a84' }}><strong>{res.id}</strong></td>
-                      <td style={{ fontSize: '11px' }}>
-                        <div><strong>Panel:</strong> {res.masterInfo?.PANEL}</div>
-                        <div><strong>Loc:</strong> {res.masterInfo?.UBICACION}</div>
+                      <td>
+                        <img src={res.thumb} style={{ width: '50px', height: '50px', objectFit: 'cover', borderRadius: '4px' }} alt="thumb" />
+                      </td>
+                      <td style={{ 
+                        // Si no se encontró en la DB, ponemos color naranja (DarkOrange)
+                        color: res.isFound ? '#646464' : '#e67e22', fontWeight: 'bold' 
+                      }}>
+                        {res.id}
+                      </td>
+                      <td style={{ fontSize: '11px', color: res.isFound ? 'inherit' : '#e67e22' }}>
+                        <div style={{ fontSize: '10px'}}>{res.masterInfo?.UBICACION}</div>
+                        <div style={{ fontSize: '9px', fontStyle: 'italic' }}>{res.masterInfo?.DISPOSITIVO}</div>
                       </td>
                     </tr>
                   ))}

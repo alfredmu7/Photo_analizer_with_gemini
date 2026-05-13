@@ -29,13 +29,26 @@ export const useGeminiOCR = () => {
             contents: [{
                 parts: [
                 { 
-                    text: `Analiza la imagen y extrae CUALQUIER código de identificación técnica o ID que esté pegado al dispositivo, en general es rectangular, dame todo el contenido dentro de esta marquilla.
-                        1. Busca etiquetas profesionales, marquillas blancas con numeracion y letras negras.
-                        2. El ID puede tener el formato P1L1M001, pero también puede ser cualquier cadena alfanumérica, números de serie o etiquetas de inventario.
-                        3. Prioriza identificadores que parezcan direcciones de dispositivos o etiquetas de activos (asset tags).
-                        4. Devuelve ÚNICAMENTE el código encontrado, sin texto adicional ni explicaciones.
-                        5. Si hay varios códigos, devuelve el que parezca ser el identificador principal del equipo.
-                        6. Si no encuentras nada, devuelve estrictamente la palabra 'la marquilla no es clara'.` 
+                    text: `
+                        Analiza la imagen técnica de este dispositivo de seguridad y extrae el identificador (ID) de la marquilla siguiendo estas reglas estrictas:
+
+                        1. IDENTIFICACIÓN DE OBJETIVOS:
+                          - Busca etiquetas blancas o pegatinas con texto impreso (marquillas).
+                          - Ignora nombres de marcas (como Johnson Controls, Axis, Notifier).
+                          - Ignora fechas (como 22-02-2026).
+
+                        2. PATRONES ESPERADOS:
+                          - Formatos alfanuméricos como: P[número]L[número]D[número] (ej. P16L8D049).
+                          - Formatos con guiones como: [número]-[letra][número] (ej. 012501-N103).
+                          - Identificadores de controladores como: 2064-04 o 2-01-08.
+                          - Habrán diferentes ID, patrones diferentes,alfanumericos, con guiones, sin guiones, con letras, sin letras, etc. 
+
+                        3. REGLAS DE SALIDA:
+                          - Devuelve ÚNICAMENTE el código alfanumérico. Sin frases, sin "ID:", sin puntos finales.
+                          - Si el ID está acompañado del modelo (ej. "RDR2SA 2064-04"), extrae todo completo (RDR2SA2064-04).
+                          - Convierte todo a MAYÚSCULAS.
+                          - Si no hay un ID claro, responde estrictamente con la frase: "La marquilla no es clara".
+                        ` 
                 },
                 { inlineData: { mimeType: "image/jpeg", data: base64Data } }
                 ]
