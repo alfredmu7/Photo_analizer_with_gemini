@@ -1,143 +1,169 @@
-/* ScannerTerminal.css */
+/* Importamos una fuente premium y moderna */
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;800&display=swap');
+
+:root {
+    --primary-blue: #3b82f6;
+    --bg-gradient: linear-gradient(135deg, #f0f7ff 0%, #e0eaff 100%);
+    --glass-bg: rgba(255, 255, 255, 0.7);
+    --text-main: #1e293b;
+    --text-muted: #64748b;
+    --accent-orange: #e67e22;
+}
+
 .terminal-container {
-    font-family: Arial, Helvetica, sans-serif;
-    background-color: #f4f4f4;
-    padding: 20px;
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    background: var(--bg-gradient);
     min-height: 100vh;
-    color: #333;
-    cursor: default !important;
+    padding: 40px 20px;
+    display: flex;
+    justify-content: center;
+    color: var(--text-main);
 }
 
 .main-card {
-    background: white;
-    border: 1px solid #ccc;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-    max-width: 1200px;
-    margin: 0 auto;
+    width: 100%;
+    max-width: 1100px;
+    background: var(--glass-bg);
+    backdrop-filter: blur(12px); /* Efecto cristal */
+    -webkit-backdrop-filter: blur(12px);
+    border-radius: 32px;
+    border: 1px solid rgba(255, 255, 255, 0.8);
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.05);
+    overflow: hidden;
+    padding: 30px;
 }
 
+/* Headers Estilo Clean */
 .header-blue {
-    background-color: #005a84;
-    color: white;
-    padding: 10px 15px;
-    font-weight: bold;
-    font-size: 14px;
-    border-bottom: 1px solid #004666;
-}
-
-.action-bar {
-    padding: 15px;
-    background: #fafafa;
-    border-bottom: 1px solid #ddd;
+    font-size: 2rem;
+    font-weight: 800;
+    color: #0f172a;
+    margin-bottom: 25px;
     display: flex;
-    gap: 10px;
     align-items: center;
-    flex-wrap: wrap;
+    gap: 12px;
+    background: transparent !important; /* Quitamos el fondo sólido anterior */
 }
 
-/* Botones estilo plataforma */
+/* Botones Estilo "Cápsula" */
 .btn-platform {
-    background: #eeeeee;
-    border: 1px solid #ababab;
-    padding: 15px 14px;
-    cursor: pointer;
+    background: var(--primary-blue);
+    color: white;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 50px;
+    font-weight: 600;
     font-size: 14px;
-    border-radius: 15px;
-    color: #333;
-    transition: background 0.2s;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.25);
+    display: flex;
+    align-items: center;
+    gap: 8px;
 }
 
 .btn-platform:hover:not(:disabled) {
-    background: #e0e0e0;
-    border-color: #999;
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(59, 130, 246, 0.35);
+    filter: brightness(1.1);
 }
 
 .btn-platform:disabled {
-    color: #bbb;
-    background: #f9f9f9;
+    background: #cbd5e1;
     cursor: not-allowed;
-    border-color: #ddd;
+    box-shadow: none;
 }
 
-/* Variante para el botón de generar (verde suave tipo plataforma) */
-.btn-success {
-    background: #f0fff0;
-    border-color: #4caf50;
-    color: #2e7d32;
-}
-.btn-success:hover:not(:disabled) {
-    background: #e4f9e4;
-    border-color: #2e7d32;
-}
-
-/* Contenedor de controles de fecha */
-.stamp-controls {
-    display: flex;
-    gap: 5px;
-    align-items: center;
+/* Módulo de Watermark (Watermark Tool) */
+.drop-zone-stamp {
+    padding: 12px;
+    transition: all 0.3s ease !important;
+    background-color: rgba(255, 255, 255, 0.5) !important;
+    border: 2px dashed #3b82f6 !important;
+    border-radius: 30px;
+    text-align: center;
+    cursor: pointer;
 }
 
-.date-picker {
-    border: 1px solid #ccc;
-    padding: 5px;
-    font-size: 12px;
-    border-radius: 2px;
-    color: #333;
-    background: #fff;
+.drop-zone-stamp:hover {
+    background-color: #ffffff !important;
+    border-style: solid !important;
+    transform: scale(1.02);
 }
 
-/* Barra de carga */
-.progress-wrapper {
-    padding: 15px 20px;
-    background: #fff;
-    border-bottom: 1px solid #ddd;
-}
-
+/* Barra de Progreso */
 .progress-track {
-    background: #eee;
-    height: 18px;
-    border: 1px solid #bbb;
-    border-radius: 2px;
+    height: 8px;
+    background: #e2e8f0;
+    border-radius: 10px;
     overflow: hidden;
-    position: relative;
+    margin-top: 10px;
 }
 
 .progress-fill {
-    background: linear-gradient(to bottom, #4caf50 0%, #2e7d32 100%);
     height: 100%;
+    background: var(--primary-blue);
     transition: width 0.4s ease;
 }
 
 .progress-text {
     font-size: 12px;
-    margin-top: 6px;
-    color: #666;
-    display: flex;
-    justify-content: space-between;
+    font-weight: 600;
+    color: var(--primary-blue);
+    margin-top: 8px;
+    text-align: right;
 }
 
-/* Tablas */
+/* Tablas Estilo Tarjetas */
 .data-table {
     width: 100%;
-    border-collapse: collapse;
+    border-collapse: separate;
+    border-spacing: 0 10px; /* Espacio entre filas */
 }
 
-.data-table th {
-    background: #f8f8f8;
-    border: 1px solid #ccc;
+.data-table thead th {
+    padding: 10px 15px;
+    color: var(--text-muted);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
     text-align: left;
-    padding: 8px 12px;
-    font-size: 13px;
+}
+
+.data-table tbody tr {
+    background: white;
+    transition: transform 0.2s ease;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+}
+
+.data-table tbody tr:hover {
+    transform: scale(1.01);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
 }
 
 .data-table td {
-    border: 1px solid #ccc;
-    padding: 8px 12px;
-    font-size: 13px;
-    background: #fff;
+    padding: 15px;
+    border-top: 1px solid #f1f5f9;
+    border-bottom: 1px solid #f1f5f9;
 }
 
-.row-error {
-    color: #c00;
-    background-color: #fff5f5 !important;
+.data-table td:first-child {
+    border-left: 1px solid #f1f5f9;
+    border-top-left-radius: 16px;
+    border-bottom-left-radius: 16px;
+}
+
+.data-table td:last-child {
+    border-right: 1px solid #f1f5f9;
+    border-top-right-radius: 16px;
+    border-bottom-right-radius: 16px;
+}
+
+/* Scrollbar personalizado para que no se vea feo */
+div::-webkit-scrollbar {
+    width: 6px;
+}
+div::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 10px;
 }
