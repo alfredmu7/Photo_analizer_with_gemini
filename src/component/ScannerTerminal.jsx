@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import * as XLSX from 'xlsx';
+import ReportFiller from './ReportFiller';
 import '../styles/ScannerTerminal.css';
 
 // IMPORTACIÓN: Asegúrate de que el logo esté en la ruta correcta.
@@ -87,7 +88,7 @@ const ScannerTerminal = () => {
       reader.readAsDataURL(imageBlob);
     });
 
-    const modelName = "gemini-3-flash-preview"; // Actualizado a la versión estable actual
+    const modelName = "gemini-2.5-flash"; // Actualizado a la versión estable actual
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
 
     const response = await fetch(url, {
@@ -138,14 +139,12 @@ const ScannerTerminal = () => {
           currentResults.push({
             id: finalId, 
             fileName: file.name,
-            originalFile: file,
+            originalFile: file, // Usamos directamente el archivo original
             thumb: thumbUrl,
             isFound: !!masterInfo,
-            masterInfo: masterInfo || { ID: finalId, DISPOSITIVO: "N/A", UBICACION: "No encontrado en DB" }
+            masterInfo: masterInfo || { ID: finalId, DISPOSITIVO: "N/A", UBICACION: "No encontrado" }
           });
           setResults([...currentResults]);
-        } else {
-          throw new Error("ID no legible");
         }
       } catch (err) {
         setErrors(prev => [...prev, { fileName: file.name, reason: err.message, thumb: thumbUrl }]);
@@ -271,6 +270,26 @@ const ScannerTerminal = () => {
                 </div>
               </div>
             )}
+          </div>
+
+          <div className="action-buttons-container" style={{ display: 'flex', gap: '10px' }}>
+  
+            <ReportFiller 
+              results={results} 
+              dateStamp={dateStamp} 
+              type="Otrosí 20" 
+              templatePath="/Informe_mto_otrosi_fads.docx"
+              className="btn-platform"
+            />
+
+            <ReportFiller 
+              results={results} 
+              dateStamp={dateStamp} 
+              type="Otrosí 7" 
+              templatePath="/Informe_mto_otrosi_fads.docx" 
+              className="btn-platform" // <-- Pasamos la clase aquí
+            />
+
           </div>
 
           <button className="btn-platform" onClick={downloadExcel} disabled={loading || results.length === 0} style={{ marginLeft: 'auto', background: '#fff', color: '#1e293b', border: '1px solid #e2e8f0' }}>♻️ Excel</button>
