@@ -88,7 +88,7 @@ const ScannerTerminal = () => {
       reader.readAsDataURL(imageBlob);
     });
 
-    const modelName = "gemini-2.5-flash"; // Actualizado a la versión estable actual
+    const modelName = "gemini-2.5-flash-lite"; // Actualizado a la versión estable actual
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
 
     const response = await fetch(url, {
@@ -276,7 +276,6 @@ const ScannerTerminal = () => {
   
             <ReportFiller 
               results={results} 
-              dateStamp={dateStamp} 
               type="Otrosí 20" 
               templatePath="/Informe_mto_otrosi_fads.docx"
               className="btn-platform"
@@ -284,10 +283,9 @@ const ScannerTerminal = () => {
 
             <ReportFiller 
               results={results} 
-              dateStamp={dateStamp} 
               type="Otrosí 7" 
               templatePath="/Informe_mto_otrosi_fads.docx" 
-              className="btn-platform" // <-- Pasamos la clase aquí
+              className="btn-platform"
             />
 
           </div>

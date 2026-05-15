@@ -1,0 +1,215 @@
+/* Importamos la fuente premium */
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;800&display=swap');
+
+:root {
+    --primary-blue: #3b82f6;
+    --primary-green: #10b981;
+    --glass-bg: rgba(255, 255, 255, 0.75);
+    --text-main: #1e293b;
+    --text-muted: #64748b;
+}
+
+/* Fondo del modal con efecto bokeh */
+.report-modal-overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(15, 23, 42, 0.65);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+    font-family: 'Plus Jakarta Sans', sans-serif; /* Fuente base */
+}
+
+/* Ventana interna del modal */
+.report-modal-content {
+    background: #ffffff;
+    padding: 25px;
+    border-radius: 24px;
+    width: 95%;
+    max-width: 900px;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+    color: var(--text-main);
+    border: 1px solid rgba(255, 255, 255, 0.8);
+    font-family: 'Plus Jakarta Sans', sans-serif;
+}
+
+.report-modal-content h3 {
+    margin: 0 0 15px 0;
+    font-size: 1.25rem;
+    font-weight: 800;
+    color: #0f172a;
+    letter-spacing: -0.02em;
+    font-family: 'Plus Jakarta Sans', sans-serif;
+}
+
+/* Scroll vertical principal */
+.report-modal-table-container {
+    overflow-y: auto;
+    flex: 1;
+    padding-right: 8px;
+    margin-bottom: 10px;
+}
+
+/* Fila compacta por cada Dispositivo */
+.report-dispositivo-block {
+    background: #ffffff;
+    border: 1px solid #f1f5f9;
+    border-radius: 14px;
+    padding: 10px 16px;
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.01);
+    transition: background-color 0.2s ease;
+}
+
+.report-dispositivo-block:hover {
+    background-color: #f8fafc;
+}
+
+/* Información de ID y Ubicación */
+.report-dispositivo-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 250px;
+    font-family: 'Plus Jakarta Sans', sans-serif;
+}
+
+.report-dispositivo-info span {
+    font-size: 13px;
+    color: var(--text-main);
+}
+
+/* Input tipo Date */
+.report-dispositivo-header input[type="date"] {
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    padding: 4px 10px;
+    border: 1px solid #cbd5e1;
+    border-radius: 50px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-main);
+    background: #ffffff;
+    outline: none;
+    margin-top: 4px;
+    width: 120px;
+}
+
+/* Contenedor horizontal de fotos */
+.report-grid-fotos {
+    display: flex;
+    gap: 12px;
+    overflow-x: auto;
+    padding: 6px 2px;
+    max-width: 420px;
+    scrollbar-width: thin;
+}
+
+.report-foto-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+}
+
+.report-thumbnail {
+    width: 50px;
+    height: 50px;
+    object-fit: cover;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    border: 1px solid #e2e8f0;
+}
+
+/* Selector Dropdown */
+.report-select-rol {
+    font-family: 'Plus Jakarta Sans', sans-serif; /* Forzado */
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 4px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    background-color: #ffffff;
+    color: #475569;
+    outline: none;
+    width: 75px;
+    text-align: center;
+}
+
+/* Barra inferior de acciones */
+.report-modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    border-top: 1px solid #f1f5f9;
+    padding-top: 15px;
+}
+
+/* --- BOTÓN CANCELAR CON LA FUENTE PREMUM --- */
+.report-btn-cancel {
+    font-family: 'Plus Jakarta Sans', sans-serif; /* FORZADO */
+    background: #e2e8f0;
+    color: #475569;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 50px;
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.report-btn-cancel:hover {
+    background: #cbd5e1;
+    color: #1e293b;
+    transform: translateY(-1px);
+}
+
+/* --- BOTÓN GENERAR CON LA FUENTE PREMIUM --- */
+.report-btn-confirm {
+    font-family: 'Plus Jakarta Sans', sans-serif; /* FORZADO */
+    background: var(--primary-green);
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 50px;
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.25);
+}
+
+.report-btn-confirm:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 16px rgba(16, 185, 129, 0.35);
+    filter: brightness(1.05);
+}
+
+.report-btn-confirm:disabled {
+    background: #cbd5e1;
+    cursor: not-allowed;
+    box-shadow: none;
+    transform: none;
+}
+
+/* Scrollbars */
+.report-modal-table-container::-webkit-scrollbar,
+.report-grid-fotos::-webkit-scrollbar {
+    height: 4px;
+    width: 5px;
+}
+.report-modal-table-container::-webkit-scrollbar-thumb,
+.report-grid-fotos::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 10px;
+}
