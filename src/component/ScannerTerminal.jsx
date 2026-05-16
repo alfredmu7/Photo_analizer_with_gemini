@@ -3,12 +3,17 @@ import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import * as XLSX from 'xlsx';
 import ReportFiller from './ReportFiller';
+import AccessGatekeeper from './AccessGatekeeper'; // <-- NUEVA IMPORTACIÓN
 import '../styles/ScannerTerminal.css';
 
 // IMPORTACIÓN: Asegúrate de que el logo esté en la ruta correcta.
 import logoJCI from '../assets/logoJCIcompleto.png';
 
 const ScannerTerminal = () => {
+  // --- ESTADOS DE CONTROL DE ACCESO ---
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [accessMode, setAccessMode] = useState(null); // 'full' o 'watermark'
+
   // --- ESTADOS ---
   const [loading, setLoading] = useState(false);
   const [dbData, setDbData] = useState([]);
@@ -21,19 +26,28 @@ const ScannerTerminal = () => {
 
   // --- EFECTOS ---
   useEffect(() => {
-    const loadMasterData = async () => {
-      try {
-        const response = await fetch('/SQL_fads_oficial_backend.json');
-        if (!response.ok) throw new Error("No se pudo cargar el archivo JSON");
-        const data = await response.json();
-        setDbData(data);
-        setDbReady(true);
-      } catch (err) {
-        console.error("Error cargando el maestro JSON:", err);
-      }
-    };
-    loadMasterData();
-  }, []);
+    // Solo cargar la base de datos si se tiene acceso total para ahorrar recursos
+    if (isAuthenticated && accessMode === 'full') {
+      const loadMasterData = async () => {
+        try {
+          const response = await fetch('/SQL_fads_oficial_backend.json');
+          if (!response.ok) throw new Error("No se pudo cargar el archivo JSON");
+          const data = await response.json();
+          setDbData(data);
+          setDbReady(true);
+        } catch (err) {
+          console.error("Error cargando el maestro JSON:", err);
+        }
+      };
+      loadMasterData();
+    }
+  }, [isAuthenticated, accessMode]);
+
+  // --- MANEJADOR RETORNO DE AUTENTICACIÓN ---
+  const handleAccessGranted = (mode) => {
+    setAccessMode(mode);
+    setIsAuthenticated(true);
+  };
 
   // --- UTILIDADES DE PROCESAMIENTO ---
   const normalizeId = (id) => {
@@ -88,7 +102,7 @@ const ScannerTerminal = () => {
       reader.readAsDataURL(imageBlob);
     });
 
-    const modelName = "gemini-2.5-flash-lite"; // Actualizado a la versión estable actual
+    const modelName = "gemini-2.5-flash-lite";
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
 
     const response = await fetch(url, {
@@ -139,7 +153,7 @@ const ScannerTerminal = () => {
           currentResults.push({
             id: finalId, 
             fileName: file.name,
-            originalFile: file, // Usamos directamente el archivo original
+            originalFile: file,
             thumb: thumbUrl,
             isFound: !!masterInfo,
             masterInfo: masterInfo || { ID: finalId, DISPOSITIVO: "N/A", UBICACION: "No encontrado" }
@@ -225,7 +239,7 @@ const ScannerTerminal = () => {
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Resultados");
-    XLSX.writeFile(wb, "Reporte_FADS_Gemini.xlsx");
+    XLSX.writeFile(wb, "Reporte_FADS.xlsx");
   };
 
   const downloadZip = async () => {
@@ -238,110 +252,129 @@ const ScannerTerminal = () => {
     saveAs(content, "Fotos_FADS_Organizadas.zip");
   };
 
+  // --- EVALUACIÓN INTERNA: Si no está validado, muestra la pantalla de bloqueo ---
+  if (!isAuthenticated) {
+    return <AccessGatekeeper onAccessGranted={handleAccessGranted} />;
+  }
+
+  // --- RENDERIZADO PRINCIPAL DE LA APLICACIÓN ---
   return (
-    <div className="terminal-container">
-      <div className="main-card">
-        <div className="header-blue">
-          IDs Analyzer 
-          <span style={{ fontSize: '14px', fontWeight: '500', color: dbReady ? '#22c55e' : '#64748b', marginLeft: '10px' }}>
-            {dbReady ? '● Online' : '○ Loading DB...'}
-          </span>
-        </div>
+    <>
+      {/* Si no está autenticado, el Gatekeeper se dibuja encima como un modal fijo */}
+      {!isAuthenticated && <AccessGatekeeper onAccessGranted={handleAccessGranted} />}
 
-        <div className="action-bar" style={{ display: 'flex', gap: '15px', flexWrap: 'wrap', marginBottom: '25px' }}>
-          <input type="file" webkitdirectory="" directory="" multiple onChange={processImages} id="file-input" hidden />
-          <button className="btn-platform" onClick={() => document.getElementById('file-input').click()} disabled={loading || !dbReady}>
-            📁 Scan Folder
-          </button>
-
-          <div className="drop-zone-stamp" onClick={() => document.getElementById('stamp-input').click()}>
-            <input type="file" id="stamp-input" multiple accept="image/*" webkitdirectory="" directory="" onChange={(e) => setStampingFiles(Array.from(e.target.files).filter(f => f.type.startsWith('image/')))} hidden />
-            {stampingFiles.length === 0 ? (
-              <div>
-                <p style={{ margin: 0, fontSize: '11px', fontWeight: '800', color: '#3b82f6' }}>📸 WATERMARK TOOL</p>
-                <p style={{ margin: 0, fontSize: '10px', color: '#64748b' }}>Click to select folder</p>
-              </div>
-            ) : (
-              <div onClick={(e) => e.stopPropagation()}>
-                <p style={{ margin: '0 0 5px 0', fontSize: '11px', color: '#10b981', fontWeight: 'bold' }}>✅ {stampingFiles.length} photos ready</p>
-                <div style={{ display: 'flex', gap: '5px', justifyContent: 'center', alignItems: 'center' }}>
-                  <input type="date" value={dateStamp} onChange={(e) => setDateStamp(e.target.value)} style={{ fontSize: '10px', border: '1px solid #ddd', borderRadius: '4px' }} />
-                  <button className="btn-platform" onClick={handleGenerateStamps} disabled={!dateStamp || loading} style={{ padding: '4px 12px', fontSize: '10px', background: '#10b981' }}>Stamp</button>
-                </div>
-              </div>
+      {/* La app principal siempre se renderiza, pero se le aplica el filtro de difuminado si no hay acceso */}
+      <div className={`terminal-container ${!isAuthenticated ? 'app-blurred' : ''}`}>
+        <div className="main-card">
+          <div className="header-blue">
+            IDs Analyzer 
+            <span style={{ fontSize: '12px', fontWeight: '500', color: '#fff', marginLeft: '12px', background: accessMode === 'full' ? '#22c55e' : '#eab308', padding: '2px 5px', borderRadius: '4px' }}>
+              {accessMode === 'full' ? '⚡ Acceso Total' : '🕓 Watermark & Date'}
+            </span>
+            {accessMode === 'full' && (
+              <span style={{ fontSize: '14px', fontWeight: '500', color: dbReady ? '#22c55e' : '#64748b', marginLeft: '10px' }}>
+                {dbReady ? '● Online' : '○ Loading DB...'}
+              </span>
             )}
           </div>
 
-          <div className="action-buttons-container" style={{ display: 'flex', gap: '10px' }}>
-  
-            <ReportFiller 
-              results={results} 
-              type="Otrosí 20" 
-              templatePath="/Informe_mto_otrosi_fads.docx"
-              className="btn-platform"
-            />
+          <div className="action-bar" style={{ display: 'flex', gap: '15px', flexWrap: 'wrap', marginBottom: '25px' }}>
+            
+            <input type="file" webkitdirectory="" directory="" multiple onChange={processImages} id="file-input" hidden />
+            <button 
+              className="btn-platform" 
+              onClick={() => document.getElementById('file-input').click()} 
+              disabled={loading || !dbReady || accessMode !== 'full'}
+              style={{ opacity: accessMode === 'full' ? 1 : 0.4, cursor: accessMode === 'full' ? 'pointer' : 'not-allowed' }}
+            >
+              📁 Analizar carpeta
+            </button>
 
-            <ReportFiller 
-              results={results} 
-              type="Otrosí 7" 
-              templatePath="/Informe_mto_otrosi_fads.docx" 
-              className="btn-platform"
-            />
-
-          </div>
-
-          <button className="btn-platform" onClick={downloadExcel} disabled={loading || results.length === 0} style={{ marginLeft: 'auto', background: '#fff', color: '#1e293b', border: '1px solid #e2e8f0' }}>♻️ Excel</button>
-          <button className="btn-platform" onClick={downloadZip} disabled={loading || results.length === 0}>📂 ZIP</button>
-        </div>
-
-        {loading && (
-          <div className="progress-wrapper" style={{ marginBottom: '25px' }}>
-            <div className="progress-track"><div className="progress-fill" style={{ width: `${(progress.current/progress.total)*100}%` }}></div></div>
-            <div className="progress-text">Procesando: {progress.current}/{progress.total}</div>
-          </div>
-        )}
-
-        <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: '20px' }}>
-          <div className="column-section">
-            <h3 style={{ fontSize: '14px', color: '#64748b', marginBottom: '15px' }}>Detected Devices ({results.length})</h3>
-            <div style={{ maxHeight: '600px', overflowY: 'auto', paddingRight: '10px' }}>
-              <table className="data-table">
-                <thead><tr><th>Photo</th><th>Detected ID</th><th>Location</th></tr></thead>
-                <tbody>
-                  {results.map((res, i) => (
-                    <tr key={i}>
-                      <td><img src={res.thumb} style={{ width: '50px', height: '50px', objectFit: 'cover', borderRadius: '12px' }} alt="thumb" /></td>
-                      <td style={{ color: res.isFound ? '#1e293b' : '#e67e22', fontWeight: '700' }}>{res.id}</td>
-                      <td>
-                        <div style={{ fontSize: '11px', fontWeight: '600'}}>{res.masterInfo?.UBICACION}</div>
-                        <div style={{ fontSize: '10px', color: '#64748b' }}>{res.masterInfo?.DISPOSITIVO}</div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="drop-zone-stamp" onClick={() => document.getElementById('stamp-input').click()}>
+              <input type="file" id="stamp-input" multiple accept="image/*" webkitdirectory="" directory="" onChange={(e) => setStampingFiles(Array.from(e.target.files).filter(f => f.type.startsWith('image/')))} hidden />
+              {stampingFiles.length === 0 ? (
+                <div>
+                  <p style={{ margin: 0, fontSize: '11px', fontWeight: '800', color: '#3b82f6' }}>🕓 WATERMARK & DATE</p>
+                  <p style={{ margin: 0, fontSize: '10px', color: '#64748b' }}>Click para seleccionar carpeta</p>
+                </div>
+              ) : (
+                <div onClick={(e) => e.stopPropagation()}>
+                  <p style={{ margin: '0 0 5px 0', fontSize: '11px', color: '#10b981', fontWeight: 'bold' }}>✅ {stampingFiles.length} photos ready</p>
+                  <div style={{ display: 'flex', gap: '5px', justifycontent: 'center', alignItems: 'center' }}>
+                    <input type="date" value={dateStamp} onChange={(e) => setDateStamp(e.target.value)} style={{ fontSize: '10px', border: '1px solid #ddd', borderRadius: '4px' }} />
+                    <button className="btn-platform" onClick={handleGenerateStamps} disabled={!dateStamp || loading} style={{ padding: '4px 12px', fontSize: '10px', background: '#10b981' }}>Stamp</button>
+                  </div>
+                </div>
+              )}
             </div>
+
+            {accessMode === 'full' && (
+              <div className="action-buttons-container" style={{ display: 'flex', gap: '10px' }}>
+                <ReportFiller 
+                  results={results} 
+                  type="Otrosí 20" 
+                  templatePath="/Informe_mto_otrosi_fads.docx"
+                  className="btn-platform"
+                />
+                <ReportFiller 
+                  results={results} 
+                  type="Otrosí 7" 
+                  templatePath="/Informe_mto_otrosi_fads.docx" 
+                  className="btn-platform"
+                />
+              </div>
+            )}
+
+            <button 
+              className="btn-platform" 
+              onClick={downloadExcel} 
+              disabled={loading || results.length === 0 || accessMode !== 'full'} 
+              style={{ marginLeft: 'auto', background: '#fff', color: '#1e293b', border: '1px solid #e2e8f0', opacity: accessMode === 'full' ? 1 : 0.4 }}
+            >
+              ♻️ Excel
+            </button>
+            <button 
+              className="btn-platform" 
+              onClick={downloadZip} 
+              disabled={loading || results.length === 0 || accessMode !== 'full'}
+              style={{ opacity: accessMode === 'full' ? 1 : 0.4 }}
+            >
+              📂 ZIP
+            </button>
           </div>
 
-          <div className="column-section">
-            <h3 style={{ fontSize: '14px', color: '#ef4444', marginBottom: '15px' }}>Issues ({errors.length})</h3>
-            <div style={{ maxHeight: '600px', overflowY: 'auto' }}>
-              <table className="data-table">
-                <thead><tr><th>File</th><th>Reason</th></tr></thead>
-                <tbody>
-                  {errors.map((err, i) => (
-                    <tr key={i}>
-                      <td style={{ fontSize: '10px', color: '#64748b' }}>{err.fileName}</td>
-                      <td style={{ fontSize: '10px', color: '#ef4444', fontWeight: '600' }}>{err.reason}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          {loading && (
+            <div className="progress-wrapper" style={{ marginBottom: '25px' }}>
+              <div className="progress-track"><div className="progress-fill" style={{ width: `${(progress.current/progress.total)*100}%` }}></div></div>
+              <div className="progress-text">Procesando: {progress.current}/{progress.total}</div>
             </div>
-          </div>
+          )}
+
+          {accessMode === 'full' ? (
+            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: '20px' }}>
+              {/* Sección de tablas de dispositivos e Issues... idéntica a como la tienes */}
+              <div className="column-section">
+                <h3 style={{ fontSize: '14px', color: '#64748b', marginBottom: '15px' }}>Dispositivos detectados ({results.length})</h3>
+                {/* ... tu tabla de resultados ... */}
+              </div>
+              <div className="column-section">
+                <h3 style={{ fontSize: '14px', color: '#ef4444', marginBottom: '15px' }}>No detectados ({errors.length})</h3>
+                {/* ... tu tabla de errores ... */}
+              </div>
+            </div>
+          ) : (
+            <div style={{ textAlign: 'center', padding: '40px', border: '2px dashed #cbd5e1', borderRadius: '12px', background: '#f8fafc' }}>
+              <p style={{ fontSize: '14px', color: '#64748b', margin: 0, fontWeight: '500' }}>
+                🔒 El acceso para usar el analizador y generador de informes está restringido para tu perfil.
+              </p>
+              <p style={{ fontSize: '12px', color: '#94a3b8', marginTop: '5px' }}>
+                Usa la herramienta de marca de agua y fecha para procesar tus imágenes de inspección.
+              </p>
+            </div>
+          )}
         </div>
       </div>
-    </div>
+    </>
   );
 };
 

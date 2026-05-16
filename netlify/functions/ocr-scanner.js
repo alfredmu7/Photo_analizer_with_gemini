@@ -24,7 +24,7 @@ exports.handler = async (event, context) => {
 
         // Ejecutar la petición con el modelo y prompts exactos que ya tenías optimizados
         const response = await ai.models.generateContent({
-            model: "gemini-2.5-flash-lite",
+            model: "gemini-3-flash-preview",
             contents: [
                 {
                     role: "user",

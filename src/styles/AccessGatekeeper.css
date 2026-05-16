@@ -1,0 +1,126 @@
+/* Importamos la fuente premium idéntica a tus modales */
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;800&display=swap');
+
+:root {
+    --primary-blue: #3b82f6;
+    --primary-green: #10b981;
+    --text-main: #1e293b;
+    --text-muted: #64748b;
+}
+
+/* Pantalla de fondo completo con efecto bokeh y difuminado */
+.gatekeeper-overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(15, 23, 42, 0.4); /* Bajado a 0.4 para ver los colores borrosos de tu app de fondo */
+    backdrop-filter: blur(12px); /* Difumina la capa del login */
+    -webkit-backdrop-filter: blur(12px);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 9999; /* Asegura estar por encima de cualquier modal o header */
+    font-family: 'Plus Jakarta Sans', sans-serif;
+}
+
+/* Cuadro contenedor ultra compacto y estilizado */
+.gatekeeper-card-compact {
+    background: #ffffff;
+    padding: 35px 30px;
+    border-radius: 24px;
+    width: 90%;
+    max-width: 380px; /* Reducido para que sea un cuadro más pequeño y elegante */
+    display: flex;
+    flex-direction: column;
+    align-items: center; /* Centra horizontalmente todo el contenido */
+    justify-content: center;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+    color: var(--text-main);
+    border: 1px solid rgba(255, 255, 255, 0.8);
+    text-align: center;
+}
+
+/* Encabezado del Sistema de Control */
+.gatekeeper-title {
+    margin: 0 0 10px 0;
+    font-size: 1.3rem;
+    font-weight: 800;
+    color: #0f172a;
+    letter-spacing: -0.02em;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+/* Párrafo descriptivo */
+.gatekeeper-description {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin: 0 0 24px 0;
+    line-height: 1.5;
+}
+
+/* Formulario alineado */
+.gatekeeper-form {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+/* Input tipo Password estilizado */
+.gatekeeper-input-field {
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    width: 100%;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+    border: 1px solid #cbd5e1;
+    border-radius: 50px; /* Redondeado premium como tus inputs */
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-main);
+    background: #ffffff;
+    outline: none;
+    text-align: center;
+    transition: all 0.2s ease;
+}
+
+.gatekeeper-input-field:focus {
+    border-color: var(--primary-blue);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+
+/* Mensaje de error */
+.gatekeeper-error-msg {
+    color: #ef4444;
+    font-size: 12px;
+    font-weight: 600;
+    margin: 0 0 16px 0;
+}
+
+/* Botón de Confirmación centrado estilo Premium */
+.gatekeeper-btn-submit {
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    background: var(--primary-blue);
+    color: white;
+    border: none;
+    padding: 18px 30px;
+    border-radius: 50px; /* Totalmente ovalado */
+    font-weight: 600;
+    font-size: 13px;
+    cursor: pointer;
+    width: auto; /* No ocupa todo el ancho, se auto-ajusta al texto */
+    min-width: 180px;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.25);
+}
+
+.gatekeeper-btn-submit:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 16px rgba(59, 130, 246, 0.35);
+    filter: brightness(1.05);
+}
+
+.gatekeeper-btn-submit:active {
+    transform: translateY(0);
+}
