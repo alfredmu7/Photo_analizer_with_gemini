@@ -3,7 +3,7 @@ import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import * as XLSX from 'xlsx';
 import ReportFiller from './ReportFiller';
-import AccessGatekeeper from './AccessGatekeeper'; // <-- NUEVA IMPORTACIÓN
+import AccessGatekeeper from './AccessGatekeeper'; 
 import '../styles/ScannerTerminal.css';
 
 // IMPORTACIÓN: Asegúrate de que el logo esté en la ruta correcta.
@@ -252,11 +252,6 @@ const ScannerTerminal = () => {
     saveAs(content, "Fotos_FADS_Organizadas.zip");
   };
 
-  // --- EVALUACIÓN INTERNA: Si no está validado, muestra la pantalla de bloqueo ---
-  if (!isAuthenticated) {
-    return <AccessGatekeeper onAccessGranted={handleAccessGranted} />;
-  }
-
   // --- RENDERIZADO PRINCIPAL DE LA APLICACIÓN ---
   return (
     <>
@@ -269,7 +264,7 @@ const ScannerTerminal = () => {
           <div className="header-blue">
             IDs Analyzer 
             <span style={{ fontSize: '12px', fontWeight: '500', color: '#fff', marginLeft: '12px', background: accessMode === 'full' ? '#22c55e' : '#eab308', padding: '2px 5px', borderRadius: '4px' }}>
-              {accessMode === 'full' ? '⚡ Acceso Total' : '🕓 Watermark & Date'}
+              {accessMode === 'full' ? '⚡ Acceso Total' : 'Core 🕓 Watermark & Date'}
             </span>
             {accessMode === 'full' && (
               <span style={{ fontSize: '14px', fontWeight: '500', color: dbReady ? '#22c55e' : '#64748b', marginLeft: '10px' }}>
@@ -300,7 +295,7 @@ const ScannerTerminal = () => {
               ) : (
                 <div onClick={(e) => e.stopPropagation()}>
                   <p style={{ margin: '0 0 5px 0', fontSize: '11px', color: '#10b981', fontWeight: 'bold' }}>✅ {stampingFiles.length} photos ready</p>
-                  <div style={{ display: 'flex', gap: '5px', justifycontent: 'center', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', gap: '5px', justifyContent: 'center', alignItems: 'center' }}>
                     <input type="date" value={dateStamp} onChange={(e) => setDateStamp(e.target.value)} style={{ fontSize: '10px', border: '1px solid #ddd', borderRadius: '4px' }} />
                     <button className="btn-platform" onClick={handleGenerateStamps} disabled={!dateStamp || loading} style={{ padding: '4px 12px', fontSize: '10px', background: '#10b981' }}>Stamp</button>
                   </div>
@@ -352,15 +347,47 @@ const ScannerTerminal = () => {
 
           {accessMode === 'full' ? (
             <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: '20px' }}>
-              {/* Sección de tablas de dispositivos e Issues... idéntica a como la tienes */}
+              
+              {/* RESTAURADO: Sección de Dispositivos Detectados */}
               <div className="column-section">
                 <h3 style={{ fontSize: '14px', color: '#64748b', marginBottom: '15px' }}>Dispositivos detectados ({results.length})</h3>
-                {/* ... tu tabla de resultados ... */}
+                <div style={{ maxHeight: '600px', overflowY: 'auto', paddingRight: '10px' }}>
+                  <table className="data-table">
+                    <thead><tr><th>Foto</th><th>ID Detectado</th><th>Ubicación</th></tr></thead>
+                    <tbody>
+                      {results.map((res, i) => (
+                        <tr key={i}>
+                          <td><img src={res.thumb} style={{ width: '50px', height: '50px', objectFit: 'cover', borderRadius: '12px' }} alt="thumb" /></td>
+                          <td style={{ color: res.isFound ? '#1e293b' : '#e67e22', fontWeight: '700' }}>{res.id}</td>
+                          <td>
+                            <div style={{ fontSize: '11px', fontWeight: '600'}}>{res.masterInfo?.UBICACION}</div>
+                            <div style={{ fontSize: '10px', color: '#64748b' }}>{res.masterInfo?.DISPOSITIVO}</div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
+
+              {/* RESTAURADO: Sección de Problemas / No detectados */}
               <div className="column-section">
                 <h3 style={{ fontSize: '14px', color: '#ef4444', marginBottom: '15px' }}>No detectados ({errors.length})</h3>
-                {/* ... tu tabla de errores ... */}
+                <div style={{ maxHeight: '600px', overflowY: 'auto' }}>
+                  <table className="data-table">
+                    <thead><tr><th>Archivo</th><th>Motivo</th></tr></thead>
+                    <tbody>
+                      {errors.map((err, i) => (
+                        <tr key={i}>
+                          <td style={{ fontSize: '10px', color: '#64748b' }}>{err.fileName}</td>
+                          <td style={{ fontSize: '10px', color: '#ef4444', fontWeight: '600' }}>{err.reason}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
+
             </div>
           ) : (
             <div style={{ textAlign: 'center', padding: '40px', border: '2px dashed #cbd5e1', borderRadius: '12px', background: '#f8fafc' }}>
