@@ -110,7 +110,7 @@ const ScannerTerminal = () => {
   const apiKey = import.meta.env.VITE_GEMINI_API_KEY || ""; 
   
   // Usamos la ruta unificada que sirve para local y producción
-  const url = `/api-gemini/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+  const url = `/api-gemini/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKey}`;
 
   const response = await fetch(url, {
     method: 'POST',
