@@ -73,16 +73,19 @@ exports.handler = async (event, context) => {
         const rawText = response.text || response.candidates?.[0]?.content?.parts?.[0]?.text;
         let cleanText = rawText ? rawText.replace(/[`\n\r]/g, "").trim() : "ERROR_NOT_FOUND";
 
+        // 🌟 AGREGA ESTOS LOGS PARA AUDITORÍA:
+        console.log("=== AUDITORÍA OCR ===");
+        console.log("Texto crudo recibido de Gemini:", rawText);
+        console.log("Texto limpio final:", cleanText);
+        console.log("=====================");
+
         if (cleanText.toUpperCase().includes("ERROR")) {
             cleanText = "ERROR_NOT_FOUND";
         }
 
         return {
             statusCode: 200,
-            headers: { 
-                "Content-Type": "application/json",
-                "Access-Control-Allow-Origin": "*" // Práctico si estás probando localmente con Netlify Dev
-            },
+            headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
             body: JSON.stringify({ id: cleanText }) 
         };
 
