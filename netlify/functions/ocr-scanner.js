@@ -31,24 +31,22 @@ exports.handler = async (event, context) => {
             model: "gemini-2.5-flash", // Modelo óptimo, veloz y con soporte OCR nativo de alta precisión
             contents: [
                 // Elemento 1: Las instrucciones de procesamiento de la imagen (Prompt técnico)
-                `Analiza la imagen técnica de este dispositivo de seguridad y extrae el identificador (ID) de la marquilla siguiendo estas reglas estrictas:
+                `Analiza la imagen técnica de este dispositivo de automatización o seguridad y extrae el identificador (ID) de la marquilla siguiendo estas reglas de ingeniería de precisión:
 
-                1. IDENTIFICACIÓN DE OBJETIVOS:
-                  - Busca etiquetas blancas o pegatinas con texto impreso (marquillas).
-                  - Ignora nombres de marcas (como Johnson Controls, Axis, Notifier).
-                  - Ignora fechas (como 22-02-2026).
+                1. CONTEXTO Y ENFOQUE:
+                - Estás auditando equipos en un entorno de alta complejidad industrial/aeroportuaria.
+                - Ignora por completo marcas de fabricantes (como Johnson Controls, Metasys, Axis, Notifier, Tyco) y fechas de inspección.
+                - La imagen puede presentar sombras o reflejos. Tu objetivo es transcribir los caracteres a través del ruido visual.
 
-                2. PATRONES ESPERADOS:
-                  - Formatos alfanuméricos como: P[número]L[número]D[número] (ej. P16L8D049).
-                  - Formatos con guiones como: [número]-[letra][número] (ej. 012501-N103).
-                  - Identificadores de controladores como: 2064-04 o 2-01-08.
-                  - Habrán diferentes ID, patrones diferentes, alfanumericos, con guiones, sin guiones, con letras, sin letras, etc. 
+                2. COMPORTAMIENTO DE PATRONES (Lo que buscas):
+                - Formatos alfanuméricos encadenados: Ej. P16L8D049, P01L02D03, etc. ¡ATENCIÓN!: Si detectas la letra 'P', 'L' o 'D', es obligatorio extraer los números que la acompañan secuencialmente. Una sola letra aislada (como "P") NO es un ID válido.
+                - Formatos numéricos o compuestos: Códigos con guiones o espacios como 2064-04, 2-01-08, o 012501-N103 que identifican controladores y nodos.
 
-                3. REGLAS DE SALIDA:
-                  - Devuelve ÚNICAMENTE el código alfanumérico detectado. Sin frases, sin prefijos como "ID:", sin puntos finales.
-                  - Si el ID está acompañado del modelo o sector (ej. "RDR2SA 2064-04"), extrae todo el conjunto respetando sus espacios o guiones originales.
-                  - Convierte todo a MAYÚSCULAS.
-                  - Si no hay un ID claro o la marquilla no es legible, responde estrictamente con la frase: "ERROR_NOT_FOUND".`,
+                3. REGLAS DE SALIDA ABSOLUTAS:
+                - Devuelve ÚNICAMENTE la cadena alfanumérica del ID técnico detectado. Sin frases introductorias, sin prefijos ("ID:"), ni puntos finales.
+                - Si el ID tiene un modelo antepuesto (ej. "RDR2SA 2064-04"), extrae el conjunto completo.
+                - Todo el texto de salida debe estar en MAYÚSCULAS.
+                - Si la imagen está completamente ilegible, obstruida o el resultado de la lectura es un solo carácter alfabético suelto, responde estrictamente: "ERROR_NOT_FOUND".`,
                 
                 // Elemento 2: El buffer de la imagen en formato estructurado inlineData
                 {
