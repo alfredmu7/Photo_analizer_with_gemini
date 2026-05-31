@@ -96,17 +96,15 @@ const ScannerTerminal = () => {
 
   // 🌟 METODO DE INTEGRACIÓN ACTUALIZADO CON NETLIFY SERVERLESS FUNCTIONS
   const analyzeWithGemini = async (imageBlob) => {
-    // 1. Convertimos el Blob de la imagen comprimida a Base64 puro para transmisión HTTP segura
     const base64Image = await new Promise((resolve) => {
       const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result.split(',')[1]);
+      reader.onloadend = () => resolve(reader.result);
       reader.readAsDataURL(imageBlob);
     });
 
-    // 2. Apuntamos de manera local y en producción a la ruta de redirección de Netlify
+    // Apuntamos directamente a la función de Netlify que suplanta el antiguo proxy local
     const url = "/.netlify/functions/ocr-scanner";
 
-    // 3. Enviamos el payload JSON estructurado hacia nuestro backend seguro
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -114,11 +112,8 @@ const ScannerTerminal = () => {
     });
 
     const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Error en el servidor de Netlify");
     
-    // Si la función de Netlify arrojó un código de error, lanzamos la excepción
-    if (!response.ok) throw new Error(data.error || "Error de conexión con el servidor");
-    
-    // Retornamos el ID limpio devuelto por el backend
     return data.id || "ERROR";
   };
 
