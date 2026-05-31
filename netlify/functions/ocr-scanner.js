@@ -69,26 +69,47 @@ exports.handler = async (event, context) => {
             }
         });
 
-        // 🌟 CORRECCIÓN CRÍTICA: Extracción segura de texto compatible con @google/genai
-        const rawText = response.text || response.candidates?.[0]?.content?.parts?.[0]?.text;
+        // =================================================================
+        // EXTRAER TEXTO DE FORMA INFALIBLE (Compatibilidad estricta SDK @google/genai)
+        // =================================================================
+        let rawText = "";
+
+        if (!response) {
+            console.error("La respuesta del modelo llegó completamente vacía.");
+        } else if (typeof response.text === "function") {
+            // En algunas configuraciones del nuevo SDK, .text es una función/método
+            rawText = response.text();
+        } else if (typeof response.text === "string") {
+            // En otras, es un getter de string directo
+            rawText = response.text;
+        } else if (response.candidates?.[0]?.content?.parts?.[0]?.text) {
+            // Ruta nativa JSON de la API de Google por si falla el envoltorio del SDK
+            rawText = response.candidates[0].content.parts[0].text;
+        }
+
+        // Si después de todos los intentos sigue vacío, asignamos el error de control
         let cleanText = rawText ? rawText.replace(/[`\n\r]/g, "").trim() : "ERROR_NOT_FOUND";
 
-        // 🌟 AGREGA ESTOS LOGS PARA AUDITORÍA:
-        console.log("=== AUDITORÍA OCR ===");
-        console.log("Texto crudo recibido de Gemini:", rawText);
-        console.log("Texto limpio final:", cleanText);
-        console.log("=====================");
+        // Imprimimos en los logs para verificar el cambio en tiempo real
+        console.log("=== AUDITORÍA OCR (CORREGIDO) ===");
+        console.log("¿Se capturó texto?:", rawText ? "SÍ" : "NO");
+        console.log("Contenido extraído:", rawText);
+        console.log("Texto limpio enviado al UI:", cleanText);
+        console.log("=================================");
 
+        // Si Gemini explícitamente leyó o devolvió un mensaje de error
         if (cleanText.toUpperCase().includes("ERROR")) {
             cleanText = "ERROR_NOT_FOUND";
         }
 
         return {
             statusCode: 200,
-            headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+            headers: { 
+                "Content-Type": "application/json",
+                "Access-Control-Allow-Origin": "*"
+            },
             body: JSON.stringify({ id: cleanText }) 
         };
-
     } catch (error) {
         console.error("Error en la función de Netlify OCR:", error);
         const status = error.status || 500;
