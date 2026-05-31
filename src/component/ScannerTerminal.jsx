@@ -94,18 +94,19 @@ const ScannerTerminal = () => {
     });
   };
 
+  // 🌟 METODO DE INTEGRACIÓN ACTUALIZADO CON NETLIFY SERVERLESS FUNCTIONS
   const analyzeWithGemini = async (imageBlob) => {
-    // 1. Convertimos la imagen comprimida a Base64 puro
+    // 1. Convertimos el Blob de la imagen comprimida a Base64 puro para transmisión HTTP segura
     const base64Image = await new Promise((resolve) => {
       const reader = new FileReader();
       reader.onloadend = () => resolve(reader.result.split(',')[1]);
       reader.readAsDataURL(imageBlob);
     });
 
-    // 2. Apuntamos a la ruta de tu servidor seguro en Netlify
+    // 2. Apuntamos de manera local y en producción a la ruta de redirección de Netlify
     const url = "/.netlify/functions/ocr-scanner";
 
-    // 3. Enviamos la petición con la propiedad exacta "base64Image"
+    // 3. Enviamos el payload JSON estructurado hacia nuestro backend seguro
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -114,10 +115,10 @@ const ScannerTerminal = () => {
 
     const data = await response.json();
     
-    // Si el servidor o Google devuelven un error, lo atrapamos
+    // Si la función de Netlify arrojó un código de error, lanzamos la excepción
     if (!response.ok) throw new Error(data.error || "Error de conexión con el servidor");
     
-    // Retornamos el ID limpio que nos envía tu función de Netlify
+    // Retornamos el ID limpio devuelto por el backend
     return data.id || "ERROR";
   };
 
@@ -136,6 +137,7 @@ const ScannerTerminal = () => {
       const file = files[i];
       const thumbUrl = URL.createObjectURL(file);
 
+      // Delay controlado para mitigar problemas de Rate Limit en ráfagas grandes
       if (i > 0) {
         await new Promise(resolve => setTimeout(resolve, 4000));
       }
@@ -144,15 +146,15 @@ const ScannerTerminal = () => {
         const compressedBlob = await compressImage(file);
         const detectedId = await analyzeWithGemini(compressedBlob);
 
-        // 1. El único control: ¿Viene un error explícito del backend?
+        // Evaluar si el backend detectó un fallo o devolvió el token genérico de error
         if (!detectedId || detectedId === "ERROR" || detectedId.includes("ERROR_NOT_FOUND")) {
           throw new Error("La marquilla no es clara o no se detectó ID");
         }
 
-        // 2. CERO REGEX COMPLICADO: Confiamos en la IA. Solo estandarizamos mayúsculas y quitamos espacios extremos.
+        // Normalización del ID procesado directamente por la Inteligencia Artificial
         const finalId = detectedId.toUpperCase().trim(); 
 
-        // 3. Buscamos directo en el JSON maestro
+        // Consulta en caliente contra el JSON de infraestructura cargado en memoria
         const masterInfo = queryMaster(finalId); 
                 
         currentResults.push({
@@ -257,13 +259,10 @@ const ScannerTerminal = () => {
     saveAs(content, "Fotos_FADS_Organizadas.zip");
   };
 
-  // --- RENDERIZADO PRINCIPAL DE LA APLICACIÓN ---
   return (
     <>
-      {/* Si no está autenticado, el Gatekeeper se dibuja encima como un modal fijo */}
       {!isAuthenticated && <AccessGatekeeper onAccessGranted={handleAccessGranted} />}
 
-      {/* La app principal siempre se renderiza, pero se le aplica el filtro de difuminado si no hay acceso */}
       <div className={`terminal-container ${!isAuthenticated ? 'app-blurred' : ''}`}>
         <div className="main-card">
           <div className="header-blue">
@@ -353,7 +352,6 @@ const ScannerTerminal = () => {
           {accessMode === 'full' ? (
             <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: '20px' }}>
               
-              {/* RESTAURADO: Sección de Dispositivos Detectados */}
               <div className="column-section">
                 <h3 style={{ fontSize: '14px', color: '#64748b', marginBottom: '15px' }}>Dispositivos detectados ({results.length})</h3>
                 <div style={{ maxHeight: '600px', overflowY: 'auto', paddingRight: '10px' }}>
@@ -375,7 +373,6 @@ const ScannerTerminal = () => {
                 </div>
               </div>
 
-              {/* RESTAURADO: Sección de Problemas / No detectados */}
               <div className="column-section">
                 <h3 style={{ fontSize: '14px', color: '#ef4444', marginBottom: '15px' }}>No detectados ({errors.length})</h3>
                 <div style={{ maxHeight: '600px', overflowY: 'auto' }}>
