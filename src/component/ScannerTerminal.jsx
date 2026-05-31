@@ -94,19 +94,16 @@ const ScannerTerminal = () => {
     });
   };
 
-  // 🌟 METODO DE INTEGRACIÓN ACTUALIZADO CON NETLIFY SERVERLESS FUNCTIONS
+  // 🌟 CONEXIÓN CON TU FUNCIÓN SERVERLESS DE NETLIFY
   const analyzeWithGemini = async (imageBlob) => {
-    // 1. Convertimos el Blob de la imagen comprimida a Base64 puro para transmisión HTTP segura
     const base64Image = await new Promise((resolve) => {
       const reader = new FileReader();
       reader.onloadend = () => resolve(reader.result.split(',')[1]);
       reader.readAsDataURL(imageBlob);
     });
 
-    // 2. Apuntamos de manera local y en producción a la ruta de redirección de Netlify
     const url = "/.netlify/functions/ocr-scanner";
 
-    // 3. Enviamos el payload JSON estructurado hacia nuestro backend seguro
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -115,13 +112,13 @@ const ScannerTerminal = () => {
 
     const data = await response.json();
     
-    // Si la función de Netlify arrojó un código de error, lanzamos la excepción
     if (!response.ok) throw new Error(data.error || "Error de conexión con el servidor");
     
-    // Retornamos el ID limpio devuelto por el backend
+    // Retornamos el ID directo que envía el backend
     return data.id || "ERROR";
   };
 
+  // 🌟 PROCESAMIENTO CON LA LÓGICA FILTRADORA RESTAURADA
   const processImages = async (event) => {
     const files = Array.from(event.target.files).filter(f => f.type.startsWith('image/'));
     if (files.length === 0) return;
@@ -137,7 +134,7 @@ const ScannerTerminal = () => {
       const file = files[i];
       const thumbUrl = URL.createObjectURL(file);
 
-      // Delay controlado para mitigar problemas de Rate Limit en ráfagas grandes
+      // Delay controlado para mitigar problemas de Rate Limit
       if (i > 0) {
         await new Promise(resolve => setTimeout(resolve, 4000));
       }
@@ -146,26 +143,27 @@ const ScannerTerminal = () => {
         const compressedBlob = await compressImage(file);
         const detectedId = await analyzeWithGemini(compressedBlob);
 
-        // Evaluar si el backend detectó un fallo o devolvió el token genérico de error
-        if (!detectedId || detectedId === "ERROR" || detectedId.includes("ERROR_NOT_FOUND")) {
-          throw new Error("La marquilla no es clara o no se detectó ID");
+        // 🌟 CONDICIÓN CLAVE REPLICADA: Validar existencia, descartar tokens de error y exigir longitud > 3
+        if (detectedId && detectedId !== "ERROR" && detectedId !== "ERROR_NOT_FOUND" && detectedId.length > 3) {
+          
+          // 🌟 LIMPIEZA REGEX REPLICADA: Elimina cualquier carácter que no sea Letra, Número o Guion
+          const finalId = detectedId.replace(/[^A-Z0-9-]/g, '').toUpperCase().trim();
+          
+          const masterInfo = queryMaster(finalId); 
+                  
+          currentResults.push({
+            id: finalId, 
+            fileName: file.name,
+            originalFile: file,
+            thumb: thumbUrl,
+            isFound: !!masterInfo,
+            masterInfo: masterInfo || { ID: finalId, DISPOSITIVO: "N/A", UBICACION: "No encontrado en Base de Datos" }
+          });
+          setResults([...currentResults]);
+        } else {
+          // Si es un fragmento basura corto (como "P"), se rechaza de inmediato y va a la tabla de errores
+          throw new Error("ID incompleto, con reflejos o la marquilla no es legible");
         }
-
-        // Normalización del ID procesado directamente por la Inteligencia Artificial
-        const finalId = detectedId.toUpperCase().trim(); 
-
-        // Consulta en caliente contra el JSON de infraestructura cargado en memoria
-        const masterInfo = queryMaster(finalId); 
-                
-        currentResults.push({
-          id: finalId, 
-          fileName: file.name,
-          originalFile: file,
-          thumb: thumbUrl,
-          isFound: !!masterInfo,
-          masterInfo: masterInfo || { ID: finalId, DISPOSITIVO: "N/A", UBICACION: "No encontrado en Base de Datos" }
-        });
-        setResults([...currentResults]);
 
       } catch (err) {
         setErrors(prev => [...prev, { fileName: file.name, reason: err.message, thumb: thumbUrl }]);
@@ -235,8 +233,7 @@ const ScannerTerminal = () => {
     setStampingFiles([]);
   };
 
-const downloadExcel = () => {
-    // 1. Mapea los resultados del estado a un formato plano para las filas
+  const downloadExcel = () => {
     const rows = results.map(res => ({
       'ID Detectado': res.id,
       'Dispositivo': res.masterInfo?.DISPOSITIVO,
@@ -245,18 +242,12 @@ const downloadExcel = () => {
       'Fecha Procesado': new Date().toLocaleString()
     }));
     
-    // 2. Transforma el JSON estructurado en una hoja de trabajo (Worksheet)
     const ws = XLSX.utils.json_to_sheet(rows);
-    
-    // 3. Crea un libro de trabajo virtual nuevo (Workbook)
     const wb = XLSX.utils.book_new();
-    
-    // 4. CORREGIDO: Añade la hoja al libro asignándole el nombre de pestaña "Resultados"
     XLSX.utils.book_append_sheet(wb, ws, "Resultados");
-    
-    // 5. Descarga físicamente el archivo en el navegador del usuario
     XLSX.writeFile(wb, "Reporte_FADS.xlsx");
   };
+
   const downloadZip = async () => {
     const zip = new JSZip();
     results.forEach(res => {
