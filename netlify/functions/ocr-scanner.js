@@ -1,8 +1,6 @@
-// netlify/functions/ocr-scanner.js
 const { GoogleGenAI } = require("@google/genai");
 
 exports.handler = async (event, context) => {
-    // Validar método
     if (event.httpMethod !== "POST") {
         return { statusCode: 405, body: JSON.stringify({ error: "Método no permitido" }) };
     }
@@ -13,16 +11,13 @@ exports.handler = async (event, context) => {
             return { statusCode: 500, body: JSON.stringify({ error: "API Key no configurada en Netlify" }) };
         }
 
-        // Parsear los datos enviados desde el hook de React
         const { base64Image } = JSON.parse(event.body);
         if (!base64Image) {
             return { statusCode: 400, body: JSON.stringify({ error: "No se recibió la imagen en Base64" }) };
         }
 
-        // Inicializar SDK oficial de Google en entorno seguro
         const ai = new GoogleGenAI({ apiKey });
 
-        // Ejecutar la petición con el modelo y prompts exactos que ya tenías optimizados
         const response = await ai.models.generateContent({
             model: "gemini-2.5-flash",
             contents: [
@@ -48,7 +43,7 @@ exports.handler = async (event, context) => {
                               - Devuelve ÚNICAMENTE el código alfanumérico. Sin frases, sin "ID:", sin puntos finales.
                               - Si el ID está acompañado del modelo (ej. "RDR2SA 2064-04"), extrae todo completo (RDR2SA2064-04).
                               - Convierte todo a MAYÚSCULAS.
-                              - Si no hay un ID claro, responde estrictamente con la frase: "La marquilla no es clara".
+                              - Si no hay un ID claro, responde estrictamente con la frase: "ERROR_NOT_FOUND".
                             `
                         },
                         {
@@ -60,7 +55,6 @@ exports.handler = async (event, context) => {
                     ]
                 }
             ],
-            // Conservamos tus configuraciones exactas de temperatura y seguridad
             config: {
                 temperature: 0.1,
                 topP: 0.95,
@@ -75,21 +69,22 @@ exports.handler = async (event, context) => {
             }
         });
 
+        // Limpieza básica del texto para evitar saltos de línea o backticks de markdown
+        let cleanText = response.text ? response.text.replace(/[`\n\r]/g, "").trim() : "ERROR_NOT_FOUND";
+
         return {
             statusCode: 200,
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ text: response.text })
+            body: JSON.stringify({ id: cleanText }) // 🌟 Corregido: Coincide con data.id del frontend
         };
 
     } catch (error) {
         console.error("Error en la función de Netlify OCR:", error);
-        
-        // Capturar explícitamente el código de cuota excedida (429) desde la API de Google
         const status = error.status || 500;
         return {
             statusCode: status,
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ error: error.message || "Error interno procesando OCR" })
         };
     }
 };
-// Reiniciando servidor para actualizar API Key

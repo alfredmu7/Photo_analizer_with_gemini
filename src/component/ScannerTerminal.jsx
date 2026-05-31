@@ -95,32 +95,30 @@ const ScannerTerminal = () => {
   };
 
   const analyzeWithGemini = async (imageBlob) => {
-    const apiKey = import.meta.env.VITE_GEMINI_API_KEY?.trim();
-    const base64Data = await new Promise((resolve) => {
+    // 1. Convertimos la imagen comprimida a Base64 puro
+    const base64Image = await new Promise((resolve) => {
       const reader = new FileReader();
       reader.onloadend = () => resolve(reader.result.split(',')[1]);
       reader.readAsDataURL(imageBlob);
     });
 
-    const modelName = "gemini-2.5-flash";
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
+    // 2. Apuntamos a la ruta de tu servidor seguro en Netlify
+    const url = "/.netlify/functions/ocr-scanner";
 
+    // 3. Enviamos la petición con la propiedad exacta "base64Image"
     const response = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{
-          parts: [
-            { text: "Extract the device ID from the label. Return ONLY the ID." },
-            { inlineData: { mimeType: "image/jpeg", data: base64Data } }
-          ]
-        }]
-      })
+      body: JSON.stringify({ base64Image })
     });
 
     const data = await response.json();
-    if (!response.ok) throw new Error(data.error?.message || "Error de conexión");
-    return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim().toUpperCase() || "ERROR";
+    
+    // Si el servidor o Google devuelven un error, lo atrapamos
+    if (!response.ok) throw new Error(data.error || "Error de conexión con el servidor");
+    
+    // Retornamos el ID limpio que nos envía tu función de Netlify
+    return data.id || "ERROR";
   };
 
   const processImages = async (event) => {
@@ -146,20 +144,25 @@ const ScannerTerminal = () => {
         const compressedBlob = await compressImage(file);
         const detectedId = await analyzeWithGemini(compressedBlob);
 
-        if (detectedId && detectedId !== "ERROR" && detectedId.length > 3) {
-          const finalId = detectedId.replace(/[^A-Z0-9-]/g, '');
-          const masterInfo = queryMaster(finalId); 
-          
-          currentResults.push({
-            id: finalId, 
-            fileName: file.name,
-            originalFile: file,
-            thumb: thumbUrl,
-            isFound: !!masterInfo,
-            masterInfo: masterInfo || { ID: finalId, DISPOSITIVO: "N/A", UBICACION: "No encontrado" }
-          });
-          setResults([...currentResults]);
+        // Si Gemini no lo halló o falló la petición, se va directo al catch
+        if (!detectedId || detectedId === "ERROR" || detectedId === "ERROR_NOT_FOUND") {
+          throw new Error("La marquilla no es clara o no se detectó ID");
         }
+
+        // Limpiamos el ID quitando espacios extraños pero manteniendo el formato alfanumérico
+        const finalId = detectedId.replace(/[^A-Z0-9-]/g, '').trim();
+        const masterInfo = queryMaster(finalId); 
+        
+        currentResults.push({
+          id: finalId, 
+          fileName: file.name,
+          originalFile: file,
+          thumb: thumbUrl,
+          isFound: !!masterInfo,
+          masterInfo: masterInfo || { ID: finalId, DISPOSITIVO: "N/A", UBICACION: "No encontrado en Base de Datos" }
+        });
+        setResults([...currentResults]);
+
       } catch (err) {
         setErrors(prev => [...prev, { fileName: file.name, reason: err.message, thumb: thumbUrl }]);
       }
