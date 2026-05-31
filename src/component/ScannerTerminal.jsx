@@ -171,7 +171,7 @@ const ScannerTerminal = () => {
       const file = files[i];
       const thumbUrl = URL.createObjectURL(file);
 
-      // Delay controlado para mitigar problemas de Rate Limit en ráfagas grandes
+      // Delay controlado para mitigar problemas de Rate Limit
       if (i > 0) {
         await new Promise(resolve => setTimeout(resolve, 4000));
       }
@@ -180,17 +180,20 @@ const ScannerTerminal = () => {
         const compressedBlob = await compressImage(file);
         const detectedId = await analyzeWithGemini(compressedBlob);
 
-        // Evaluar si el backend detectó un fallo o devolvió el token genérico de error
-        if (!detectedId || detectedId === "ERROR" || detectedId.includes("ERROR_NOT_FOUND")) {
-          throw new Error("La marquilla no es clara o no se detectó ID");
+        // IMPRESIÓN DE CONTROL: Mira en la consola qué está respondiendo Gemini exactamente
+        console.log(`[DEBUG] Archivo: ${file.name} | IA detectó:`, detectedId);
+
+        // Validación robusta: verificar que sea un string válido y no un error
+        if (!detectedId || typeof detectedId !== 'string' || detectedId.toUpperCase().includes("ERROR")) {
+          throw new Error(`La IA no pudo extraer un ID válido. Respuesta: ${detectedId}`);
         }
 
-        // Normalización del ID procesado directamente por la Inteligencia Artificial
+        // Limpieza básica sin alterar números legítimos
         const finalId = detectedId.toUpperCase().trim(); 
 
-        // Consulta en caliente contra el JSON de infraestructura cargado en memoria
+        // Consulta contra el JSON de infraestructura
         const masterInfo = queryMaster(finalId); 
-                
+                    
         currentResults.push({
           id: finalId, 
           fileName: file.name,
@@ -199,9 +202,12 @@ const ScannerTerminal = () => {
           isFound: !!masterInfo,
           masterInfo: masterInfo || { ID: finalId, DISPOSITIVO: "N/A", UBICACION: "No encontrado en Base de Datos" }
         });
+        
+        // Clonamos el array para actualizar el estado correctamente en React
         setResults([...currentResults]);
 
       } catch (err) {
+        console.error(`[ERROR] Falló el procesamiento de ${file.name}:`, err.message);
         setErrors(prev => [...prev, { fileName: file.name, reason: err.message, thumb: thumbUrl }]);
       }
       setProgress(prev => ({ ...prev, current: i + 1 }));
