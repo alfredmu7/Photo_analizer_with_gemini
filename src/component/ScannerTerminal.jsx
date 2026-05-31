@@ -235,7 +235,8 @@ const ScannerTerminal = () => {
     setStampingFiles([]);
   };
 
-  const downloadExcel = () => {
+const downloadExcel = () => {
+    // 1. Mapea los resultados del estado a un formato plano para las filas
     const rows = results.map(res => ({
       'ID Detectado': res.id,
       'Dispositivo': res.masterInfo?.DISPOSITIVO,
@@ -243,12 +244,19 @@ const ScannerTerminal = () => {
       'Archivo Original': res.fileName,
       'Fecha Procesado': new Date().toLocaleString()
     }));
+    
+    // 2. Transforma el JSON estructurado en una hoja de trabajo (Worksheet)
     const ws = XLSX.utils.json_to_sheet(rows);
+    
+    // 3. Crea un libro de trabajo virtual nuevo (Workbook)
     const wb = XLSX.utils.book_new();
+    
+    // 4. CORREGIDO: Añade la hoja al libro asignándole el nombre de pestaña "Resultados"
     XLSX.utils.book_append_sheet(wb, ws, "Resultados");
+    
+    // 5. Descarga físicamente el archivo en el navegador del usuario
     XLSX.writeFile(wb, "Reporte_FADS.xlsx");
   };
-
   const downloadZip = async () => {
     const zip = new JSZip();
     results.forEach(res => {
