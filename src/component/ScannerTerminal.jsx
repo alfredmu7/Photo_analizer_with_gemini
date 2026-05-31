@@ -96,26 +96,65 @@ const ScannerTerminal = () => {
 
   // 🌟 METODO DE INTEGRACIÓN ACTUALIZADO CON NETLIFY SERVERLESS FUNCTIONS
   const analyzeWithGemini = async (imageBlob) => {
-    const base64Image = await new Promise((resolve) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result);
-      reader.readAsDataURL(imageBlob);
-    });
+  // 1. Convertir la imagen a Base64 limpia
+  const base64Image = await new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result);
+    reader.readAsDataURL(imageBlob);
+  });
 
-    // Apuntamos directamente a la función de Netlify que suplanta el antiguo proxy local
-    const url = "/.netlify/functions/ocr-scanner";
+  const cleanBase64 = base64Image.includes(",") ? base64Image.split(",")[1] : base64Image;
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ base64Image })
-    });
+  // 2. Obtener la API Key desde las variables de entorno de Vite
+  // Asegúrate de tener GEMINI_API_KEY en los entornos de Netlify
+  const apiKey = import.meta.env.VITE_GEMINI_API_KEY || ""; 
+  
+  // Usamos la ruta unificada que sirve para local y producción
+  const url = `/api-gemini/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
 
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || "Error en el servidor de Netlify");
-    
-    return data.id || "ERROR";
-  };
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      contents: [
+        {
+          parts: [
+            { text: "Extract the device ID code from the label. Return ONLY the raw ID code. No conversational text, no markdown." },
+            {
+              inlineData: {
+                mimeType: "image/jpeg",
+                data: cleanBase64
+              }
+            }
+          ]
+        }
+      ],
+      generationConfig: {
+        temperature: 0.1,
+        maxOutputTokens: 25
+      }
+    })
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json();
+    console.error("Error en la respuesta de Gemini:", errorData);
+    throw new Error("Error procesando la imagen en la IA");
+  }
+
+  const data = await response.json();
+  
+  // Extraer el texto de la respuesta estructural de Google
+  try {
+    const detectedText = data.candidates[0].content.parts[0].text.trim();
+    return detectedText;
+  } catch (e) {
+    console.error("Estructura de respuesta inesperada:", data);
+    return "ERROR_NOT_FOUND";
+  }
+};
 
   const processImages = async (event) => {
     const files = Array.from(event.target.files).filter(f => f.type.startsWith('image/'));
