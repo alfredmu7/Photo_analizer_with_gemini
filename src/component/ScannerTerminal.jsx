@@ -144,15 +144,17 @@ const ScannerTerminal = () => {
         const compressedBlob = await compressImage(file);
         const detectedId = await analyzeWithGemini(compressedBlob);
 
-        // Si Gemini no lo halló o falló la petición, se va directo al catch
-        if (!detectedId || detectedId === "ERROR" || detectedId === "ERROR_NOT_FOUND") {
+        // 1. El único control: ¿Viene un error explícito del backend?
+        if (!detectedId || detectedId === "ERROR" || detectedId.includes("ERROR_NOT_FOUND")) {
           throw new Error("La marquilla no es clara o no se detectó ID");
         }
 
-        // Limpiamos el ID quitando espacios extraños pero manteniendo el formato alfanumérico
-        const finalId = detectedId.replace(/[^A-Z0-9-]/g, '').trim();
+        // 2. CERO REGEX COMPLICADO: Confiamos en la IA. Solo estandarizamos mayúsculas y quitamos espacios extremos.
+        const finalId = detectedId.toUpperCase().trim(); 
+
+        // 3. Buscamos directo en el JSON maestro
         const masterInfo = queryMaster(finalId); 
-        
+                
         currentResults.push({
           id: finalId, 
           fileName: file.name,

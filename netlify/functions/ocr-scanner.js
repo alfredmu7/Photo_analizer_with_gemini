@@ -40,10 +40,10 @@ exports.handler = async (event, context) => {
                               - Habrán diferentes ID, patrones diferentes, alfanumericos, con guiones, sin guiones, con letras, sin letras, etc. 
 
                             3. REGLAS DE SALIDA:
-                              - Devuelve ÚNICAMENTE el código alfanumérico. Sin frases, sin "ID:", sin puntos finales.
-                              - Si el ID está acompañado del modelo (ej. "RDR2SA 2064-04"), extrae todo completo (RDR2SA2064-04).
+                              - Devuelve ÚNICAMENTE el código alfanumérico detectado. Sin frases, sin prefijos como "ID:", sin puntos finales.
+                              - Si el ID está acompañado del modelo o sector (ej. "RDR2SA 2064-04"), extrae todo el conjunto respetando sus espacios o guiones originales.
                               - Convierte todo a MAYÚSCULAS.
-                              - Si no hay un ID claro, responde estrictamente con la frase: "ERROR_NOT_FOUND".
+                              - Si no hay un ID claro o la marquilla no es legible, responde estrictamente con la frase: "ERROR_NOT_FOUND".
                             `
                         },
                         {
@@ -69,13 +69,21 @@ exports.handler = async (event, context) => {
             }
         });
 
-        // Limpieza básica del texto para evitar saltos de línea o backticks de markdown
-        let cleanText = response.text ? response.text.replace(/[`\n\r]/g, "").trim() : "ERROR_NOT_FOUND";
+        // 🌟 CORRECCIÓN CRÍTICA: Extracción segura de texto compatible con @google/genai
+        const rawText = response.text || response.candidates?.[0]?.content?.parts?.[0]?.text;
+        let cleanText = rawText ? rawText.replace(/[`\n\r]/g, "").trim() : "ERROR_NOT_FOUND";
+
+        if (cleanText.toUpperCase().includes("ERROR")) {
+            cleanText = "ERROR_NOT_FOUND";
+        }
 
         return {
             statusCode: 200,
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ id: cleanText }) // 🌟 Corregido: Coincide con data.id del frontend
+            headers: { 
+                "Content-Type": "application/json",
+                "Access-Control-Allow-Origin": "*" // Práctico si estás probando localmente con Netlify Dev
+            },
+            body: JSON.stringify({ id: cleanText }) 
         };
 
     } catch (error) {
