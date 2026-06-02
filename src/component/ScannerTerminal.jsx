@@ -49,6 +49,17 @@ const ScannerTerminal = () => {
     setIsAuthenticated(true);
   };
 
+  // --- MANEJADOR DRAG & DROP PARA MARCA DE AGUA ---
+  const handleWatermarkDrop = (e) => {
+    e.preventDefault();
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const droppedFiles = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
+      if (droppedFiles.length > 0) {
+        setStampingFiles(droppedFiles);
+      }
+    }
+  };
+
   // --- UTILIDADES DE PROCESAMIENTO ---
   const normalizeId = (id) => {
     if (!id) return "";
@@ -94,67 +105,58 @@ const ScannerTerminal = () => {
     });
   };
 
-  // 🌟 METODO DE INTEGRACIÓN ACTUALIZADO CON NETLIFY SERVERLESS FUNCTIONS
   const analyzeWithGemini = async (imageBlob) => {
-  // 1. Convertir la imagen a Base64 limpia
-  const base64Image = await new Promise((resolve) => {
-    const reader = new FileReader();
-    reader.onloadend = () => resolve(reader.result);
-    reader.readAsDataURL(imageBlob);
-  });
+    const base64Image = await new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.readAsDataURL(imageBlob);
+    });
 
-  const cleanBase64 = base64Image.includes(",") ? base64Image.split(",")[1] : base64Image;
+    const cleanBase64 = base64Image.includes(",") ? base64Image.split(",")[1] : base64Image;
+    const apiKey = import.meta.env.VITE_GEMINI_API_KEY || ""; 
+    const url = `/api-gemini/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKey}`;
 
-  // 2. Obtener la API Key desde las variables de entorno de Vite
-  // Asegúrate de tener GEMINI_API_KEY en los entornos de Netlify
-  const apiKey = import.meta.env.VITE_GEMINI_API_KEY || ""; 
-  
-  // Usamos la ruta unificada que sirve para local y producción
-  const url = `/api-gemini/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKey}`;
-
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      contents: [
-        {
-          parts: [
-            { text: "Extract the device ID code from the label. Return ONLY the raw ID code. No conversational text, no markdown." },
-            {
-              inlineData: {
-                mimeType: "image/jpeg",
-                data: cleanBase64
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        contents: [
+          {
+            parts: [
+              { text: "Extract the device ID code from the label. Return ONLY the raw ID code. No conversational text, no markdown." },
+              {
+                inlineData: {
+                  mimeType: "image/jpeg",
+                  data: cleanBase64
+                }
               }
-            }
-          ]
+            ]
+          }
+        ],
+        generationConfig: {
+          temperature: 0.1,
+          maxOutputTokens: 25
         }
-      ],
-      generationConfig: {
-        temperature: 0.1,
-        maxOutputTokens: 25
-      }
-    })
-  });
+      })
+    });
 
-  if (!response.ok) {
-    const errorData = await response.json();
-    console.error("Error en la respuesta de Gemini:", errorData);
-    throw new Error("Error procesando la imagen en la IA");
-  }
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error("Error en la respuesta de Gemini:", errorData);
+      throw new Error("Error procesando la imagen en la IA");
+    }
 
-  const data = await response.json();
-  
-  // Extraer el texto de la respuesta estructural de Google
-  try {
-    const detectedText = data.candidates[0].content.parts[0].text.trim();
-    return detectedText;
-  } catch (e) {
-    console.error("Estructura de respuesta inesperada:", data);
-    return "ERROR_NOT_FOUND";
-  }
-};
+    const data = await response.json();
+    try {
+      const detectedText = data.candidates[0].content.parts[0].text.trim();
+      return detectedText;
+    } catch (e) {
+      console.error("Estructura de respuesta inesperada:", data);
+      return "ERROR_NOT_FOUND";
+    }
+  };
 
   const processImages = async (event) => {
     const files = Array.from(event.target.files).filter(f => f.type.startsWith('image/'));
@@ -171,7 +173,6 @@ const ScannerTerminal = () => {
       const file = files[i];
       const thumbUrl = URL.createObjectURL(file);
 
-      // Delay controlado para mitigar problemas de Rate Limit
       if (i > 0) {
         await new Promise(resolve => setTimeout(resolve, 4000));
       }
@@ -180,18 +181,13 @@ const ScannerTerminal = () => {
         const compressedBlob = await compressImage(file);
         const detectedId = await analyzeWithGemini(compressedBlob);
 
-        // IMPRESIÓN DE CONTROL: Mira en la consola qué está respondiendo Gemini exactamente
         console.log(`[DEBUG] Archivo: ${file.name} | IA detectó:`, detectedId);
 
-        // Validación robusta: verificar que sea un string válido y no un error
         if (!detectedId || typeof detectedId !== 'string' || detectedId.toUpperCase().includes("ERROR")) {
           throw new Error(`La IA no pudo extraer un ID válido. Respuesta: ${detectedId}`);
         }
 
-        // Limpieza básica sin alterar números legítimos
         const finalId = detectedId.toUpperCase().trim(); 
-
-        // Consulta contra el JSON de infraestructura
         const masterInfo = queryMaster(finalId); 
                     
         currentResults.push({
@@ -203,7 +199,6 @@ const ScannerTerminal = () => {
           masterInfo: masterInfo || { ID: finalId, DISPOSITIVO: "N/A", UBICACION: "No encontrado en Base de Datos" }
         });
         
-        // Clonamos el array para actualizar el estado correctamente en React
         setResults([...currentResults]);
 
       } catch (err) {
@@ -275,8 +270,7 @@ const ScannerTerminal = () => {
     setStampingFiles([]);
   };
 
-const downloadExcel = () => {
-    // 1. Mapea los resultados del estado a un formato plano para las filas
+  const downloadExcel = () => {
     const rows = results.map(res => ({
       'ID Detectado': res.id,
       'Dispositivo': res.masterInfo?.DISPOSITIVO,
@@ -285,18 +279,12 @@ const downloadExcel = () => {
       'Fecha Procesado': new Date().toLocaleString()
     }));
     
-    // 2. Transforma el JSON estructurado en una hoja de trabajo (Worksheet)
     const ws = XLSX.utils.json_to_sheet(rows);
-    
-    // 3. Crea un libro de trabajo virtual nuevo (Workbook)
     const wb = XLSX.utils.book_new();
-    
-    // 4. CORREGIDO: Añade la hoja al libro asignándole el nombre de pestaña "Resultados"
     XLSX.utils.book_append_sheet(wb, ws, "Resultados");
-    
-    // 5. Descarga físicamente el archivo en el navegador del usuario
     XLSX.writeFile(wb, "Reporte_FADS.xlsx");
   };
+
   const downloadZip = async () => {
     const zip = new JSZip();
     results.forEach(res => {
@@ -337,16 +325,42 @@ const downloadExcel = () => {
               📁 Analizar carpeta
             </button>
 
-            <div className="drop-zone-stamp" onClick={() => document.getElementById('stamp-input').click()}>
-              <input type="file" id="stamp-input" multiple accept="image/*" webkitdirectory="" directory="" onChange={(e) => setStampingFiles(Array.from(e.target.files).filter(f => f.type.startsWith('image/')))} hidden />
+            {/* ZONA DE MARCA DE AGUA CON LA OPCIÓN INTEGRADA DE RESTABLECER (QUITAR FOTO) */}
+            <div 
+              className="drop-zone-stamp" 
+              onClick={() => document.getElementById('stamp-input').click()}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={handleWatermarkDrop}
+              style={{ cursor: 'pointer', position: 'relative' }}
+            >
+              <input 
+                type="file" 
+                id="stamp-input" 
+                multiple 
+                accept="image/*" 
+                webkitdirectory="" 
+                directory="" 
+                onChange={(e) => setStampingFiles(Array.from(e.target.files).filter(f => f.type.startsWith('image/')))} 
+                hidden 
+              />
               {stampingFiles.length === 0 ? (
                 <div>
                   <p style={{ margin: 0, fontSize: '11px', fontWeight: '800', color: '#3b82f6' }}>🕓 WATERMARK & DATE</p>
-                  <p style={{ margin: 0, fontSize: '10px', color: '#64748b' }}>Click para seleccionar carpeta</p>
+                  <p style={{ margin: 0, fontSize: '10px', color: '#64748b' }}>Click o arrastra las fotos aquí</p>
                 </div>
               ) : (
                 <div onClick={(e) => e.stopPropagation()}>
-                  <p style={{ margin: '0 0 5px 0', fontSize: '11px', color: '#10b981', fontWeight: 'bold' }}>✅ {stampingFiles.length} photos ready</p>
+                  <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', margin: '0 0 5px 0' }}>
+                    <p style={{ margin: 0, fontSize: '11px', color: '#10b981', fontWeight: 'bold' }}>✅ {stampingFiles.length} photos ready</p>
+                    {/* BOTÓN DE RESET INTEGRADO */}
+                    <button 
+                      onClick={() => { setStampingFiles([]); setDateStamp(""); }} 
+                      style={{ background: '#ef4444', color: 'white', border: 'none', borderRadius: '50%', width: '16px', height: '16px', fontSize: '9px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}
+                      title="Quitar fotos"
+                    >
+                      ✕
+                    </button>
+                  </div>
                   <div style={{ display: 'flex', gap: '5px', justifyContent: 'center', alignItems: 'center' }}>
                     <input type="date" value={dateStamp} onChange={(e) => setDateStamp(e.target.value)} style={{ fontSize: '10px', border: '1px solid #ddd', borderRadius: '4px' }} />
                     <button className="btn-platform" onClick={handleGenerateStamps} disabled={!dateStamp || loading} style={{ padding: '4px 12px', fontSize: '10px', background: '#10b981' }}>Stamp</button>
@@ -445,7 +459,7 @@ const downloadExcel = () => {
                 🔒 El acceso para usar el analizador y generador de informes está restringido para tu perfil.
               </p>
               <p style={{ fontSize: '12px', color: '#94a3b8', marginTop: '5px' }}>
-                Usa la herramienta de marca de agua y fecha para procesar tus imágenes de inspección.
+                Usa la herramienta de marca de agua y fecha para procesar tus imágenes de inspection.
               </p>
             </div>
           )}
