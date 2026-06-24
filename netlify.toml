@@ -4,3 +4,11 @@
 
 [functions]
   directory = "netlify/functions"
+
+# === AGREGAR ESTO PARA SOLUCIONAR EL ERROR DE CORS ===
+[[headers]]
+  for = "/.netlify/functions/*"
+  [headers.values]
+    Access-Control-Allow-Origin = "*"
+    Access-Control-Allow-Headers = "Content-Type"
+    Access-Control-Allow-Methods = "POST, GET, OPTIONS"
