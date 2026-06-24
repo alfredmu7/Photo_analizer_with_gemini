@@ -26,19 +26,58 @@ const ScannerTerminal = () => {
 
   // --- EFECTOS ---
   useEffect(() => {
-    // Solo cargar la base de datos si se tiene acceso total para ahorrar recursos
     if (isAuthenticated && accessMode === 'full') {
       const loadMasterData = async () => {
         try {
-          const response = await fetch('/SQL_fads_oficial_backend.json');
-          if (!response.ok) throw new Error("No se pudo cargar el archivo JSON");
-          const data = await response.json();
-          setDbData(data);
-          setDbReady(true);
+          console.log("Iniciando carga de las 3 bases de datos (SACS, CCTV, FADS)...");
+          
+          const urls = [
+            '/SQL_sacs_backend.json',
+            '/SQL_cctv_backend.json',
+            '/SQL_fads_oficial_backend.json'
+          ];
+          
+          const results = await Promise.allSettled(urls.map(url => fetch(url)));
+          
+          let combinedData = [];
+          let loadedCount = 0;
+
+          for (let i = 0; i < results.length; i++) {
+            const resStatus = results[i];
+            const url = urls[i];
+
+            if (resStatus.status === 'fulfilled' && resStatus.value.ok) {
+              try {
+                const data = await resStatus.value.json();
+                if (Array.isArray(data)) {
+                  combinedData = [...combinedData, ...data];
+                  loadedCount++;
+                  console.log(`✅ Cargado con éxito: ${url} (${data.length} registros)`);
+                } else {
+                  console.warn(`⚠️ El archivo ${url} no contiene un array válido.`);
+                }
+              } catch (parseErr) {
+                console.error(`❌ Error al procesar el formato JSON de ${url}:`, parseErr);
+              }
+            } else {
+              console.error(`❌ No se pudo conectar o encontrar el archivo: ${url}`);
+            }
+          }
+
+          if (combinedData.length > 0) {
+            setDbData(combinedData);
+            setDbReady(true);
+            console.log(`🚀 Base de datos unificada lista. Total registros en memoria: ${combinedData.length} (Origen: ${loadedCount}/3 archivos).`);
+          } else {
+            throw new Error("Ninguno de los 3 archivos JSON pudo ser cargado o mapeado.");
+          }
+
         } catch (err) {
-          console.error("Error cargando el maestro JSON:", err);
+          console.error("Error crítico en el ecosistema de almacenamiento local:", err);
+          setDbReady(false);
         }
       };
+      
       loadMasterData();
     }
   }, [isAuthenticated, accessMode]);
@@ -60,6 +99,15 @@ const ScannerTerminal = () => {
     }
   };
 
+  // --- FUNCIÓN PARA LIMPIAR EL TOTAL DE LAS FOTOS ANALIZADAS ---
+  const clearAllAnalyzedData = () => {
+    setResults([]);
+    setErrors([]);
+    setProgress({ current: 0, total: 0 });
+    const fileInput = document.getElementById('file-input');
+    if (fileInput) fileInput.value = "";
+  };
+
   // --- UTILIDADES DE PROCESAMIENTO ---
   const normalizeId = (id) => {
     if (!id) return "";
@@ -67,15 +115,78 @@ const ScannerTerminal = () => {
     return clean.replace(/P0+/g, 'P').replace(/L0+/g, 'L');
   };
 
+  const getSimilarityScore = (str1, str2) => {
+    const s1 = str1.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const s2 = str2.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    
+    if (s1 === s2) return 100;
+    if (!s1 || !s2) return 0;
+
+    const track = Array(s2.length + 1).fill(null).map(() => Array(s1.length + 1).fill(null));
+    for (let i = 0; i <= s1.length; i += 1) track[0][i] = i;
+    for (let j = 0; j <= s2.length; j += 1) track[j][0] = j;
+
+    for (let j = 1; j <= s2.length; j += 1) {
+      for (let i = 1; i <= s1.length; i += 1) {
+        const indicator = s1[i - 1] === s2[j - 1] ? 0 : 1;
+        track[j][i] = Math.min(
+          track[j][i - 1] + 1,
+          track[j - 1][i] + 1,
+          track[j - 1][i - 1] + indicator
+        );
+      }
+    }
+    
+    const distance = track[s2.length][s1.length];
+    const maxLength = Math.max(s1.length, s2.length);
+    return ((maxLength - distance) / maxLength) * 100;
+  };
+
   const queryMaster = (detectedId) => {
-    if (!dbData.length) return null;
-    const normalizedSearch = normalizeId(detectedId);
-    const found = dbData.find(item => item.ID && normalizeId(item.ID) === normalizedSearch);
-    return found ? {
-      ID: found.ID,
-      DISPOSITIVO: found.DISPOSITIVO || "N/A",
-      UBICACION: found.UBICACION || "N/A",
-    } : null;
+    if (!dbData.length || !detectedId) return null;
+    const searchClean = detectedId.toUpperCase().trim();
+    
+    const exactMatch = dbData.find(item => {
+      const dbIdRaw = item.ID_PUERTA || item.ID || item.id || item.CODIGO || item.ID_DISPOSITIVO;
+      if (!dbIdRaw) return false;
+      const dbClean = dbIdRaw.toString().toUpperCase().trim();
+      return searchClean.includes(dbClean) || dbClean.includes(searchClean);
+    });
+
+    if (exactMatch) {
+      return {
+        ID: exactMatch.ID_PUERTA || exactMatch.ID || exactMatch.id || exactMatch.CODIGO,
+        DISPOSITIVO: exactMatch.TIPO_DE_EQUIPO || exactMatch.TIPO || exactMatch.tipo || exactMatch.DISPOSITIVO || "DISPOSITIVO",
+        UBICACION: exactMatch.UBICACION || exactMatch.ubicacion || exactMatch.ZONA || "N/A",
+        score: 100 
+      };
+    }
+
+    let bestMatch = null;
+    let highestScore = 0;
+    const UMBRAL_MINIMO = 70; 
+
+    dbData.forEach(item => {
+      const dbIdRaw = item.ID_PUERTA || item.ID || item.id || item.CODIGO || item.ID_DISPOSITIVO;
+      if (!dbIdRaw) return;
+      const dbClean = dbIdRaw.toString().toUpperCase().trim();
+      const score = getSimilarityScore(searchClean, dbClean);
+      if (score > highestScore) {
+        highestScore = score;
+        bestMatch = item;
+      }
+    });
+
+    if (bestMatch && highestScore >= UMBRAL_MINIMO) {
+      const finalDbId = bestMatch.ID_PUERTA || bestMatch.ID || bestMatch.id || bestMatch.CODIGO;
+      return {
+        ID: finalDbId,
+        DISPOSITIVO: bestMatch.TIPO_DE_EQUIPO || bestMatch.TIPO || bestMatch.tipo || bestMatch.DISPOSITIVO || "DISPOSITIVO",
+        UBICACION: bestMatch.UBICACION || bestMatch.ubicacion || bestMatch.ZONA || "N/A",
+        score: highestScore
+      };
+    }
+    return null;
   };
 
   const compressImage = (file) => {
@@ -105,6 +216,7 @@ const ScannerTerminal = () => {
     });
   };
 
+  // --- FUNCIÓN ADAPTADA PARA LA MIGRACIÓN HACIA TU PRODUCCIÓN EN NETLIFY ---
   const analyzeWithGemini = async (imageBlob) => {
     const base64Image = await new Promise((resolve) => {
       const reader = new FileReader();
@@ -113,51 +225,34 @@ const ScannerTerminal = () => {
     });
 
     const cleanBase64 = base64Image.includes(",") ? base64Image.split(",")[1] : base64Image;
-    const apiKey = import.meta.env.VITE_GEMINI_API_KEY || ""; 
-    const url = `/api-gemini/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${apiKey}`;
+    
+    // Apuntamos directamente a tu dominio en Netlify para procesar en la nube de forma segura
+    const url = 'https://id-analizer.netlify.app/.netlify/functions/ocr-scanner';
 
     const response = await fetch(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              { text: "Extract the device ID code from the label. Return ONLY the raw ID code. No conversational text, no markdown." },
-              {
-                inlineData: {
-                  mimeType: "image/jpeg",
-                  data: cleanBase64
-                }
-              }
-            ]
-          }
-        ],
-        generationConfig: {
-          temperature: 0.1,
-          maxOutputTokens: 25
-        }
-      })
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ base64Image: cleanBase64 })
     });
 
     if (!response.ok) {
-      const errorData = await response.json();
-      console.error("Error en la respuesta de Gemini:", errorData);
-      throw new Error("Error procesando la imagen en la IA");
+      const errData = await response.json().catch(() => ({}));
+      console.error("Error detallado devuelto por Netlify Function:", errData);
+      throw new Error(`Error en Netlify Serverless (${response.status})`);
     }
 
     const data = await response.json();
-    try {
-      const detectedText = data.candidates[0].content.parts[0].text.trim();
-      return detectedText;
-    } catch (e) {
-      console.error("Estructura de respuesta inesperada:", data);
-      return "ERROR_NOT_FOUND";
+    
+    // Extraemos el string detectado devuelto por tu Backend
+    const detectedText = data.text || data.detectedText || data.id;
+    if (!detectedText || detectedText.toUpperCase().includes("ERROR")) {
+      throw new Error("La IA no devolvió caracteres legibles.");
     }
+
+    return detectedText.trim();
   };
 
+  // --- LÓGICA REINCORPORADA Y OPTIMIZADA CON REINTENTOS + CONCURRENCIA ---
   const processImages = async (event) => {
     const files = Array.from(event.target.files).filter(f => f.type.startsWith('image/'));
     if (files.length === 0) return;
@@ -168,45 +263,79 @@ const ScannerTerminal = () => {
     setProgress({ current: 0, total: files.length });
 
     const currentResults = [];
+    const currentErrors = [];
+    let completedCount = 0;
 
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      const thumbUrl = URL.createObjectURL(file);
+    const CONCURRENCY_LIMIT = 6; // Procesamiento en ráfagas de 6 imágenes en simultáneo
+    const MAX_RETRIES = 3;       // Intentos máximos por imagen si falla la red o cuota
 
-      if (i > 0) {
-        await new Promise(resolve => setTimeout(resolve, 4000));
-      }
+    // Trabajamos con una copia indexada de archivos para coordinar el paralelismo
+    const pool = files.map((file, index) => ({ file, index }));
 
-      try {
-        const compressedBlob = await compressImage(file);
-        const detectedId = await analyzeWithGemini(compressedBlob);
+    const worker = async () => {
+      while (pool.length > 0) {
+        const task = pool.shift();
+        if (!task) break;
 
-        console.log(`[DEBUG] Archivo: ${file.name} | IA detectó:`, detectedId);
+        const { file } = task;
+        const thumbUrl = URL.createObjectURL(file);
+        let currentDelay = 3000; // Iniciamos con 3 segundos de espera exponencial en fallos
+        let success = false;
 
-        if (!detectedId || typeof detectedId !== 'string' || detectedId.toUpperCase().includes("ERROR")) {
-          throw new Error(`La IA no pudo extraer un ID válido. Respuesta: ${detectedId}`);
+        for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+          try {
+            // 1. Compresión local
+            const compressedBlob = await compressImage(file);
+            
+            // 2. Análisis con la función segura en la nube (Netlify)
+            const detectedId = await analyzeWithGemini(compressedBlob);
+            const finalId = detectedId.toUpperCase().trim(); 
+            const masterInfo = queryMaster(finalId); 
+                        
+            currentResults.push({
+              id: finalId, 
+              fileName: file.name,
+              originalFile: file,
+              thumb: thumbUrl,
+              isFound: !!masterInfo,
+              masterInfo: masterInfo || { ID: finalId, DISPOSITIVO: "N/A", UBICACION: "No encontrado en Base de Datos" }
+            });
+            
+            // Actualización de resultados en tiempo real
+            setResults([...currentResults]);
+            success = true;
+            break; // Salimos exitosamente del bucle de reintentos para esta foto
+
+          } catch (err) {
+            console.warn(`⚠️ [Intento ${attempt}/${MAX_RETRIES}] Falló la foto ${file.name}: ${err.message}`);
+            
+            if (attempt < MAX_RETRIES) {
+              // Espera exponencial antes del siguiente reintento
+              await new Promise(resolve => setTimeout(resolve, currentDelay));
+              currentDelay *= 2; // Duplica el tiempo (3s -> 6s)
+            } else {
+              // Si agotó los 3 intentos, la mandamos definitivamente a fallidos
+              currentErrors.push({ 
+                fileName: file.name, 
+                reason: err.message || "Agotó los intentos de conexión.", 
+                thumb: thumbUrl 
+              });
+              setErrors([...currentErrors]);
+            }
+          }
         }
 
-        const finalId = detectedId.toUpperCase().trim(); 
-        const masterInfo = queryMaster(finalId); 
-                    
-        currentResults.push({
-          id: finalId, 
-          fileName: file.name,
-          originalFile: file,
-          thumb: thumbUrl,
-          isFound: !!masterInfo,
-          masterInfo: masterInfo || { ID: finalId, DISPOSITIVO: "N/A", UBICACION: "No encontrado en Base de Datos" }
-        });
-        
-        setResults([...currentResults]);
-
-      } catch (err) {
-        console.error(`[ERROR] Falló el procesamiento de ${file.name}:`, err.message);
-        setErrors(prev => [...prev, { fileName: file.name, reason: err.message, thumb: thumbUrl }]);
+        completedCount++;
+        setProgress(prev => ({ ...prev, current: completedCount }));
       }
-      setProgress(prev => ({ ...prev, current: i + 1 }));
-    }
+    };
+
+    // Lanzamos las funciones de procesamiento en paralelo limitado
+    const workers = Array(Math.min(CONCURRENCY_LIMIT, pool.length))
+      .fill(null)
+      .map(() => worker());
+
+    await Promise.all(workers);
     setLoading(false);
   };
 
@@ -268,6 +397,7 @@ const ScannerTerminal = () => {
     saveAs(content, `Inspeccion_JCI_Fechada_${dateStamp}.zip`);
     setLoading(false);
     setStampingFiles([]);
+    setDateStamp("");
   };
 
   const downloadExcel = () => {
@@ -278,12 +408,11 @@ const ScannerTerminal = () => {
       'Archivo Original': res.fileName,
       'Fecha Procesado': new Date().toLocaleString()
     }));
-    
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Resultados");
     XLSX.writeFile(wb, "Reporte_FADS.xlsx");
-  };
+  }; 
 
   const downloadZip = async () => {
     const zip = new JSZip();
@@ -314,7 +443,6 @@ const ScannerTerminal = () => {
           </div>
 
           <div className="action-bar" style={{ display: 'flex', gap: '15px', flexWrap: 'wrap', marginBottom: '25px' }}>
-            
             <input type="file" webkitdirectory="" directory="" multiple onChange={processImages} id="file-input" hidden />
             <button 
               className="btn-platform" 
@@ -325,7 +453,7 @@ const ScannerTerminal = () => {
               📁 Analizar carpeta
             </button>
 
-            {/* ZONA DE MARCA DE AGUA CON LA OPCIÓN INTEGRADA DE RESTABLECER (QUITAR FOTO) */}
+            {/* ZONA DE MARCA DE AGUA */}
             <div 
               className="drop-zone-stamp" 
               onClick={() => document.getElementById('stamp-input').click()}
@@ -352,7 +480,6 @@ const ScannerTerminal = () => {
                 <div onClick={(e) => e.stopPropagation()}>
                   <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', margin: '0 0 5px 0' }}>
                     <p style={{ margin: 0, fontSize: '11px', color: '#10b981', fontWeight: 'bold' }}>✅ {stampingFiles.length} photos ready</p>
-                    {/* BOTÓN DE RESET INTEGRADO */}
                     <button 
                       onClick={() => { setStampingFiles([]); setDateStamp(""); }} 
                       style={{ background: '#ef4444', color: 'white', border: 'none', borderRadius: '50%', width: '16px', height: '16px', fontSize: '9px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}
@@ -371,18 +498,8 @@ const ScannerTerminal = () => {
 
             {accessMode === 'full' && (
               <div className="action-buttons-container" style={{ display: 'flex', gap: '10px' }}>
-                <ReportFiller 
-                  results={results} 
-                  type="Otrosí 20" 
-                  templatePath="/Informe_mto_otrosi_fads.docx"
-                  className="btn-platform"
-                />
-                <ReportFiller 
-                  results={results} 
-                  type="Otrosí 7" 
-                  templatePath="/Informe_mto_otrosi_fads.docx" 
-                  className="btn-platform"
-                />
+                <ReportFiller results={results} type="Otrosí 20" templatePath="/Informe_mto_otrosi_fads.docx" className="btn-platform" />
+                <ReportFiller results={results} type="Otrosí 7" templatePath="/Informe_mto_otrosi_fads.docx" className="btn-platform" />
               </div>
             )}
 
@@ -412,21 +529,57 @@ const ScannerTerminal = () => {
           )}
 
           {accessMode === 'full' ? (
-            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: '20px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: '20px', position: 'relative' }}>
               
-              <div className="column-section">
-                <h3 style={{ fontSize: '14px', color: '#64748b', marginBottom: '15px' }}>Dispositivos detectados ({results.length})</h3>
+              {/* BOTÓN DE LIMPIEZA TOTAL */}
+              {(results.length > 0 || errors.length > 0) && (
+                <button
+                  onClick={clearAllAnalyzedData}
+                  disabled={loading}
+                  style={{
+                    position: 'absolute',
+                    top: '-12px',
+                    right: 'calc(40% + 10px)',
+                    background: '#fee2e2',
+                    color: '#ef4444',
+                    border: '1.5px solid #fca5a5',
+                    borderRadius: '10px',
+                    width: '38px',
+                    height: '38px',
+                    fontSize: '18px',
+                    fontWeight: 'bold',
+                    cursor: loading ? 'not-allowed' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    boxShadow: '0 4px 6px -1px rgba(239, 68, 68, 0.1)',
+                    zIndex: 10,
+                    transition: 'all 0.2s ease'
+                  }}
+                  title="Limpiar todas las fotos analizadas"
+                  onMouseEnter={(e) => { if(!loading) e.target.style.background = '#fecaca'; }}
+                  onMouseLeave={(e) => { if(!loading) e.target.style.background = '#fee2e2'; }}
+                >
+                  ✕
+                </button>
+              )}
+
+              {/* COLUMNA: DETECTADOS */}
+              <div className="column-section" style={{ background: '#fff', borderRadius: '16px', padding: '20px', border: '1px solid #e2e8f0' }}>
+                <h3 style={{ fontSize: '15px', fontWeight: '700', color: '#0f172a', marginBottom: '15px' }}>
+                  Dispositivos detectados ({results.length})
+                </h3>
                 <div style={{ maxHeight: '600px', overflowY: 'auto', paddingRight: '10px' }}>
                   <table className="data-table">
                     <thead><tr><th>Foto</th><th>ID Detectado</th><th>Ubicación</th></tr></thead>
                     <tbody>
                       {results.map((res, i) => (
                         <tr key={i}>
-                          <td><img src={res.thumb} style={{ width: '50px', height: '50px', objectFit: 'cover', borderRadius: '12px' }} alt="thumb" /></td>
-                          <td style={{ color: res.isFound ? '#1e293b' : '#e67e22', fontWeight: '700' }}>{res.id}</td>
+                          <td><img src={res.thumb} style={{ width: '55px', height: '55px', objectFit: 'cover', borderRadius: '10px', border: '1px solid #e2e8f0' }} alt="thumb" /></td>
+                          <td style={{ color: res.isFound ? '#1e293b' : '#e67e22', fontWeight: '700', fontSize: '13px' }}>{res.id}</td>
                           <td>
-                            <div style={{ fontSize: '11px', fontWeight: '600'}}>{res.masterInfo?.UBICACION}</div>
-                            <div style={{ fontSize: '10px', color: '#64748b' }}>{res.masterInfo?.DISPOSITIVO}</div>
+                            <div style={{ fontSize: '12px', fontWeight: '600', color: '#1e293b'}}>{res.masterInfo?.UBICACION}</div>
+                            <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>{res.masterInfo?.DISPOSITIVO}</div>
                           </td>
                         </tr>
                       ))}
@@ -435,16 +588,40 @@ const ScannerTerminal = () => {
                 </div>
               </div>
 
-              <div className="column-section">
-                <h3 style={{ fontSize: '14px', color: '#ef4444', marginBottom: '15px' }}>No detectados ({errors.length})</h3>
+              {/* COLUMNA: NO DETECTADOS CON PREVISUALIZACIÓN */}
+              <div className="column-section" style={{ background: '#fff', borderRadius: '16px', padding: '20px', border: '1px solid #e2e8f0' }}>
+                <h3 style={{ fontSize: '15px', fontWeight: '700', color: '#ef4444', marginBottom: '15px' }}>
+                  No detectados ({errors.length})
+                </h3>
                 <div style={{ maxHeight: '600px', overflowY: 'auto' }}>
                   <table className="data-table">
-                    <thead><tr><th>Archivo</th><th>Motivo</th></tr></thead>
+                    <thead>
+                      <tr>
+                        <th>Foto</th>
+                        <th>Archivo</th>
+                        <th>Motivo</th>
+                      </tr>
+                    </thead>
                     <tbody>
                       {errors.map((err, i) => (
                         <tr key={i}>
-                          <td style={{ fontSize: '10px', color: '#64748b' }}>{err.fileName}</td>
-                          <td style={{ fontSize: '10px', color: '#ef4444', fontWeight: '600' }}>{err.reason}</td>
+                          <td>
+                            {err.thumb ? (
+                              <img 
+                                src={err.thumb} 
+                                style={{ width: '55px', height: '55px', objectFit: 'cover', borderRadius: '10px', border: '1px solid #fee2e2' }} 
+                                alt="error thumb" 
+                              />
+                            ) : (
+                              <div style={{ width: '55px', height: '55px', borderRadius: '10px', background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px' }}>⚠️</div>
+                            )}
+                          </td>
+                          <td style={{ fontSize: '11px', color: '#475569', fontWeight: '500', maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {err.fileName}
+                          </td>
+                          <td style={{ fontSize: '11px', color: '#ef4444', fontWeight: '600' }}>
+                            {err.reason}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -459,7 +636,7 @@ const ScannerTerminal = () => {
                 🔒 El acceso para usar el analizador y generador de informes está restringido para tu perfil.
               </p>
               <p style={{ fontSize: '12px', color: '#94a3b8', marginTop: '5px' }}>
-                Usa la herramienta de marca de agua y fecha para procesar tus imágenes de inspection.
+                Usa la herramienta de marca de agua y fecha para procesar tus imágenes de inspección.
               </p>
             </div>
           )}
