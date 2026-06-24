@@ -1,8 +1,11 @@
 // Archivo: netlify/functions/ocr-scanner.js
-const { GoogleGenAI } = require("@google/genai"); // O la librería exacta que uses para Gemini
+const { GoogleGenAI } = require("@google/genai"); 
+
+// Se inicializa el SDK usando la variable de entorno que configuraste en el panel de Netlify
+const ai = new GoogleGenAI({ apiKey: process.env.VITE_GEMINI_API_KEY });
 
 exports.handler = async (event, context) => {
-  // 1. RESPONDER CON UN "HTTP OK STATUS (200)" A LAS PETICIONES PREFLIGHT OPTIONS
+  // 1. Manejo del Preflight OPTIONS para solucionar CORS definitivamente
   if (event.httpMethod === "OPTIONS") {
     return {
       statusCode: 200,
@@ -11,53 +14,54 @@ exports.handler = async (event, context) => {
         "Access-Control-Allow-Headers": "Content-Type",
         "Access-Control-Allow-Methods": "POST, OPTIONS",
       },
-      body: JSON.stringify({ message: "Successful preflight" }),
+      body: JSON.stringify({ message: "CORS preflight exitoso" }),
     };
   }
 
-  // 2. CONTROLAR QUE SOLO SE PROCESEN PETICIONES POST
   if (event.httpMethod !== "POST") {
-    return {
-      statusCode: 405,
-      body: "Method Not Allowed",
-    };
+    return { statusCode: 405, body: "Method Not Allowed" };
   }
 
   try {
-    // 3. TU LÓGICA DE GEMINI 
-    // Parseamos la imagen que viene desde tu hook useGeminiOCR
-    const body = JSON.parse(event.body);
-    const base64Image = body.base64Image;
+    const data = JSON.parse(event.body);
+    const base64Image = data.base64Image;
 
     if (!base64Image) {
       return {
         statusCode: 400,
         headers: { "Access-Control-Allow-Origin": "*" },
-        body: JSON.stringify({ error: "No se proporcionó ninguna imagen base64" }),
+        body: JSON.stringify({ error: "No se recibió imagen en base64" }),
       };
     }
 
-    // --- Aquí colocas tu inicialización y llamada a la API de Gemini ---
-    // Ejemplo rápido (ajústalo según tus variables de entorno y SDK):
-    // const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-    // const response = await ai.models.generateContent({ ... });
-    // const textoDetectado = response.text;
-    
-    // Marcador de posición (reemplázalo con tu lógica real de Gemini):
-    const textoDetectado = "TEXTO_PROCESADO_POR_GEMINI"; 
+    // 2. Aquí está tu lógica real con el Prompt optimizado para las etiquetas industriales
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash", 
+      contents: [
+        {
+          inlineData: {
+            mimeType: "image/jpeg",
+            data: base64Image
+          }
+        },
+        "Extrae únicamente el código de identificación o ID de dispositivo industrial visible en la etiqueta blanca con letras negras (ejemplo: P11L2). No agregues texto adicional, saludos ni explicaciones, solo devuelve el ID en texto limpio."
+      ],
+    });
 
-    // 4. RETORNO EXITOSO CON ESTADO 200 OK Y SU CABECERA CORS
+    const textoDetectadoIA = response.text ? response.text.trim() : "ERROR_NO_CANDIDATE";
+
+    // 3. Devolución del ID real al Frontend con las cabeceras CORS de autorización
     return {
       statusCode: 200,
       headers: {
         "Access-Control-Allow-Origin": "*",
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ text: textoDetectado }),
+      body: JSON.stringify({ text: textoDetectadoIA }),
     };
 
   } catch (error) {
-    console.error("Error en ocr-scanner:", error);
+    console.error("Error en la API de Gemini Backend:", error);
     return {
       statusCode: 500,
       headers: {
