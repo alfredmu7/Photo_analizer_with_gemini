@@ -400,20 +400,38 @@ const ScannerTerminal = () => {
     setDateStamp("");
   };
 
+  // --- DESCARGA DE EXCEL SIN DUPLICADOS ---
   const downloadExcel = () => {
-    const rows = results.map(res => ({
+    // 1. Filtramos los resultados para quedarnos únicamente con un registro único por cada 'id'
+    const uniqueResultsMap = new Map();
+    
+    results.forEach(res => {
+      // Usamos el ID como clave. Si el ID ya existe, no se sobrescribe.
+      if (!uniqueResultsMap.has(res.id)) {
+        uniqueResultsMap.set(res.id, res);
+      }
+    });
+
+    // 2. Convertimos el Map de elementos únicos de vuelta a un Array
+    const uniqueResultsArray = Array.from(uniqueResultsMap.values());
+
+    // 3. Mapeamos las filas para el Excel usando los datos únicos
+    const rows = uniqueResultsArray.map(res => ({
       'ID Detectado': res.id,
       'Dispositivo': res.masterInfo?.DISPOSITIVO,
       'Ubicación': res.masterInfo?.UBICACION,
       'Archivo Original': res.fileName,
       'Fecha Procesado': new Date().toLocaleString()
     }));
+
+    // 4. Construcción y descarga del archivo Excel
     const ws = XLSX.utils.json_to_sheet(rows);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Resultados");
     XLSX.writeFile(wb, "Reporte_FADS.xlsx");
   }; 
 
+  // --- DESCARGA DE FOTOS EN ZIP ---
   const downloadZip = async () => {
     const zip = new JSZip();
     results.forEach(res => {
