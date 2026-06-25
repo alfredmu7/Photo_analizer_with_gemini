@@ -6,6 +6,8 @@ import { saveAs } from 'file-saver';
 import logoJCI from '../assets/logoJCIcompleto.png';
 import '../styles/ReportFiller.css'; 
 
+import wordIcon from '../assets/word.png';
+
 const ReportFiller = ({ results, type, templatePath, className }) => {
     const [showModal, setShowModal] = useState(false);
     const [previewData, setPreviewData] = useState([]);
@@ -275,7 +277,16 @@ const ReportFiller = ({ results, type, templatePath, className }) => {
     return (
         <>
             <button className={className} onClick={openConfig} disabled={results.length === 0}>
-                📄 {type}
+                <img 
+                    src={wordIcon}
+                    alt="Word Icon" 
+                    style={{ 
+                    width: '20px', 
+                    height: '20px', 
+                    objectFit: 'contain' 
+                    }} 
+                />
+                 {type}
             </button>
 
             {showModal && (

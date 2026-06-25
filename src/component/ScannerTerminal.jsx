@@ -8,6 +8,7 @@ import '../styles/ScannerTerminal.css';
 
 // IMPORTACIÓN: Asegúrate de que el logo esté en la ruta correcta.
 import logoJCI from '../assets/logoJCIcompleto.png';
+import excelIcon from '../assets/excel.png';
 
 const ScannerTerminal = () => {
   // --- ESTADOS DE CONTROL DE ACCESO ---
@@ -520,14 +521,33 @@ const ScannerTerminal = () => {
               </div>
             )}
 
-            <button 
-              className="btn-platform" 
-              onClick={downloadExcel} 
-              disabled={loading || results.length === 0 || accessMode !== 'full'} 
-              style={{ marginLeft: 'auto', background: '#fff', color: '#1e293b', border: '1px solid #e2e8f0', opacity: accessMode === 'full' ? 1 : 0.4 }}
-            >
-              ♻️ Excel
-            </button>
+              <button 
+                className="btn-platform" 
+                onClick={downloadExcel} 
+                disabled={loading || results.length === 0 || accessMode !== 'full'} 
+                style={{ 
+                  marginLeft: 'auto', 
+                  background: '#fff', 
+                  color: '#1e293b', 
+                  border: '1px solid #e2e8f0', 
+                  opacity: accessMode === 'full' ? 1 : 0.4,
+                  display: 'flex',          // Alinea la imagen y el texto perfectamente al centro
+                  alignItems: 'center', 
+                  gap: '8px',               // Separa el icono del texto "Excel"
+                  padding: '6px 15px' 
+                }}
+              >
+                <img 
+                  src={excelIcon}
+                  alt="Excel Icon" 
+                  style={{ 
+                    width: '20px', 
+                    height: '20px', 
+                    objectFit: 'contain' 
+                  }} 
+                />
+                Excel
+              </button>
             <button 
               className="btn-platform" 
               onClick={downloadZip} 
