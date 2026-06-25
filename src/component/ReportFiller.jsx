@@ -6,33 +6,9 @@ import { saveAs } from 'file-saver';
 import logoJCI from '../assets/logoJCIcompleto.png';
 import '../styles/ReportFiller.css'; 
 
-// --- ALGORITMO MATEMÁTICO DE SIMILITUD (Distancia de Levenshtein) ---
-const calcularDistanciaTexto = (a, b) => {
-    if (a.length === 0) return b.length;
-    if (b.length === 0) return a.length;
-    const matrix = [];
-    for (let i = 0; i <= b.length; i++) matrix[i] = [i];
-    for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
-    for (let i = 1; i <= b.length; i++) {
-        for (let j = 1; j <= a.length; j++) {
-            if (b.charAt(i - 1) === a.charAt(j - 1)) {
-                matrix[i][j] = matrix[i - 1][j - 1];
-            } else {
-                matrix[i][j] = Math.min(
-                    matrix[i - 1][j - 1] + 1, // Sustitución
-                    matrix[i][j - 1] + 1,     // Inserción
-                    matrix[i - 1][j] + 1      // Eliminación
-                );
-            }
-        }
-    }
-    return matrix[b.length][a.length];
-};
-
 const ReportFiller = ({ results, type, templatePath, className }) => {
     const [showModal, setShowModal] = useState(false);
     const [previewData, setPreviewData] = useState([]);
-    const [alertasSospechosos, setAlertasSospechosos] = useState([]); // Estado para los IDs parecidos
     const [isProcessing, setIsProcessing] = useState(false);
 
     // --- FUNCIÓN DE SELLADO: BASE64 DIRECTO ---
@@ -90,85 +66,57 @@ const ReportFiller = ({ results, type, templatePath, className }) => {
         });
     };
 
-    // --- PROCESAMIENTO Y DETECCIÓN AL ABRIR EL POPUP (CON FILTRO DE VECINOS) ---
+    // --- FUNCIÓN DE LIMPIEZA COMPLEMENTARIA PARA COINCIDENCIAS ---
+    const normalizeIdForMatching = (id) => {
+        if (!id) return "";
+        return id.toUpperCase().replace(/([A-Z])0+/g, '$1').replace(/[^A-Z0-9]/g, '');
+    };
+
+    // --- PROCESAMIENTO Y AGRUPACIÓN AL ABRIR EL POPUP ---
     const openConfig = () => {
         if (!results || results.length === 0) return;
 
-        const limit = type === "Otrosí 7" ? 30 : 10;
-        const grouped = [];
-        const seen = new Set();
         const today = new Date().toISOString().split('T')[0];
+        const grouped = [];
+        const seenNormalizedIds = new Set();
 
-        // 1. Agrupar fotos por ID único
         for (let i = 0; i < results.length; i++) {
             const res = results[i];
-            if (res && res.id && !seen.has(res.id) && grouped.length < limit) {
-                const todasLasFotosDelId = results.filter(r => r.id === res.id);
-                
-                const fotosEstructuradas = todasLasFotosDelId.map((foto, index) => ({
-                    originalFile: foto.originalFile,
-                    thumb: foto.thumb,
-                    rol: index === 0 ? 'antes' : index === 1 ? 'despues' : 'ninguno'
-                }));
+            if (!res || !res.id) continue;
 
-                grouped.push({
-                    id: res.id,
-                    ubi: res.masterInfo?.UBICACION || "No encontrado",
-                    fecha: today,
-                    fotos: fotosEstructuradas
-                });
-                seen.add(res.id);
-            }
+            const currentNormalized = normalizeIdForMatching(res.id);
+
+            if (seenNormalizedIds.has(currentNormalized)) continue;
+
+            const todasLasFotosDelId = results.filter(r => normalizeIdForMatching(r.id) === currentNormalized);
+            
+            const fotosEstructuradas = todasLasFotosDelId.map((foto, index) => ({
+                originalFile: foto.originalFile,
+                thumb: foto.thumb,
+                rol: index === 0 ? 'antes' : index === 1 ? 'despues' : 'ninguno',
+                idDetectadoOCR: foto.id 
+            }));
+
+            const idAntesPropuesto = fotosEstructuradas[0]?.idDetectadoOCR || res.id;
+            const idDespuesPropuesto = fotosEstructuradas[1]?.idDetectadoOCR || idAntesPropuesto;
+            const idSeleccionadoPorDefecto = idDespuesPropuesto;
+
+            grouped.push({
+                idOriginal: res.id,
+                idSeleccionado: idSeleccionadoPorDefecto, 
+                idAntes: idAntesPropuesto,
+                idDespues: idDespuesPropuesto,
+                isEditingManual: false,
+                ubi: res.masterInfo?.UBICACION || "No encontrado",
+                fecha: today,
+                fotos: fotosEstructuradas
+            });
+            
+            seenNormalizedIds.add(currentNormalized);
         }
 
-        // 2. Escanear en busca de IDs Sospechosos con filtro inteligente de fotos
-        const sospechososDetectados = [];
-        for (let i = 0; i < grouped.length; i++) {
-            for (let j = i + 1; j < grouped.length; j++) {
-                const bloqueA = grouped[i];
-                const bloqueB = grouped[j];
-                
-                const distancia = calcularDistanciaTexto(bloqueA.id, bloqueB.id);
-
-                if (distancia > 0 && distancia <= 2) {
-                    const totalFotosAmbosId = bloqueA.fotos.length + bloqueB.fotos.length;
-                    if (totalFotosAmbosId < 4) {
-                        sospechososDetectados.push({
-                            idxA: i,
-                            idxB: j,
-                            idA: bloqueA.id,
-                            idB: bloqueB.id
-                        });
-                    }
-                }
-            }
-        }
-
-        setAlertasSospechosos(sospechososDetectados);
         setPreviewData(grouped);
         setShowModal(true);
-    };
-
-    // --- ACCIÓN DE UNIFICAR DISPOSITIVOS ---
-    const fusionarIds = (alertIdx, idCorrecto, idIncorrecto) => {
-        const alerta = alertasSospechosos[alertIdx];
-        let newData = [...previewData];
-
-        const bloqueCorrecto = newData.find(item => item.id === idCorrecto);
-        const bloqueIncorrecto = newData.find(item => item.id === idIncorrecto);
-
-        if (bloqueCorrecto && bloqueIncorrecto) {
-            bloqueCorrecto.fotos = [...bloqueCorrecto.fotos, ...bloqueIncorrecto.fotos];
-            bloqueCorrecto.fotos.forEach((f, idx) => {
-                f.rol = idx === 0 ? 'antes' : idx === 1 ? 'despues' : 'ninguno';
-            });
-            newData = newData.filter(item => item.id !== idIncorrecto);
-        }
-
-        const nuevasAlertas = alertasSospechosos.filter((_, idx) => idx !== alertIdx);
-        
-        setPreviewData(newData);
-        setAlertasSospechosos(nuevasAlertas);
     };
 
     const handleRoleChange = (idIdx, fotoIdx, nuevoRol) => {
@@ -183,6 +131,48 @@ const ReportFiller = ({ results, type, templatePath, className }) => {
             });
         }
         dispositivo.fotos[fotoIdx].rol = nuevoRol;
+        setPreviewData(newData);
+    };
+
+    // --- MANEJADOR DE SELECCIÓN Y UNIFICACIÓN EN TIEMPO REAL ---
+    const handleIdSelection = (idIdx, valorNuevo) => {
+        let newData = [...previewData];
+        const bloqueActual = newData[idIdx];
+        
+        bloqueActual.idSeleccionado = valorNuevo;
+
+        const normalizedNuevo = normalizeIdForMatching(valorNuevo);
+        if (!normalizedNuevo) {
+            setPreviewData(newData);
+            return;
+        }
+
+        const destinoIdx = newData.findIndex((row, idx) => 
+            idx !== idIdx && (
+                normalizeIdForMatching(row.idSeleccionado) === normalizedNuevo ||
+                normalizeIdForMatching(row.idAntes) === normalizedNuevo ||
+                normalizeIdForMatching(row.idDespues) === normalizedNuevo
+            )
+        );
+
+        if (destinoIdx !== -1) {
+            const bloqueDestino = newData[destinoIdx];
+
+            bloqueActual.fotos.forEach(foto => {
+                const tieneDespues = bloqueDestino.fotos.some(f => f.rol === 'despues');
+                if (!tieneDespues && foto.rol === 'antes') {
+                    foto.rol = 'despues';
+                }
+                bloqueDestino.fotos.push(foto);
+            });
+
+            if ((bloqueDestino.ubi === 'N/A' || bloqueDestino.ubi === 'No encontrado') && bloqueActual.ubi !== 'No encontrado') {
+                bloqueDestino.ubi = bloqueActual.ubi;
+            }
+
+            newData = newData.filter((_, idx) => idx !== idIdx);
+        }
+
         setPreviewData(newData);
     };
 
@@ -236,32 +226,28 @@ const ReportFiller = ({ results, type, templatePath, className }) => {
                 const base64Antes = fotoAntesObj ? await applyWatermark(fotoAntesObj.originalFile, item.fecha) : null;
                 const base64Despues = fotoDespuesObj ? await applyWatermark(fotoDespuesObj.originalFile, item.fecha) : null;
 
-                // --- FORMATEO EXCLUSIVO PARA LA TABLA DEL INFORME (aaaa-mm-dd -> dd-mm-aa) ---
-                // --- FORMATEO EXCLUSIVO PARA LA TABLA DEL INFORME (aaaa-mm-dd -> dd-mm-aaaa) ---
                 let fechaFormateadaTabla = "";
                 if (item.fecha) {
                     const [year, month, day] = item.fecha.split("-");
-                    // Quitamos el .slice(-2) para que deje el año completo (2026)
                     fechaFormateadaTabla = `${day}-${month}-${year || ""}`;
                 }
 
                 cleanReportData.push({
                     item: (cleanReportData.length + 1).toString().padStart(3, '0'),
                     fecha: fechaFormateadaTabla,
-                    id: item.id || "",
+                    id: item.idSeleccionado || "", 
                     ubi: item.ubi || "",
                     foto_antes: base64Antes || transparentPixelBase64,
                     foto_despues: base64Despues || transparentPixelBase64
                 });
             }
 
-            // --- FORMATEO PARA LA FECHA GLOBAL DE GENERACIÓN (dd-mm-aaaa) ---
-                const hoy = new Date();
-                const diaGlobal = String(hoy.getDate()).padStart(2, '0');
-                const mesGlobal = String(hoy.getMonth() + 1).padStart(2, '0');
-                const anioGlobal = String(hoy.getFullYear()); // Quitamos el .slice(-2) aquí también
+            const hoy = new Date();
+            const diaGlobal = String(hoy.getDate()).padStart(2, '0');
+            const mesGlobal = String(hoy.getMonth() + 1).padStart(2, '0');
+            const anioGlobal = String(hoy.getFullYear());
 
-                const fechaGeneracionFormateada = `${diaGlobal}-${mesGlobal}-${anioGlobal}`;
+            const fechaGeneracionFormateada = `${diaGlobal}-${mesGlobal}-${anioGlobal}`;
 
             doc.setData({
                 reporte: cleanReportData,
@@ -282,7 +268,7 @@ const ReportFiller = ({ results, type, templatePath, className }) => {
         } catch (error) {
             console.error("Error crítico detallado en la compilación:", error);
             alert("No se pudo generar el reporte. Revisa la consola.");
-        } document.body.style.cursor = 'default';
+        }
         setIsProcessing(false);
     };
 
@@ -295,117 +281,112 @@ const ReportFiller = ({ results, type, templatePath, className }) => {
             {showModal && (
                 <div className="report-modal-overlay">
                     <div className="report-modal-content">
-                        <h3>Asignación de Fotos para Informe: {type}</h3>
                         
-                        {/* --- BANNER DE DETECCIÓN INTELIGENTE DE IDS SOSPECHOSOS --- */}
-                        {alertasSospechosos.length > 0 && (
-                            <div className="report-alert-container">
-                                <span className="report-alert-title">
-                                    🔍 IDs Sospechosos de Duplicidad (Revisa las fotos antes de unificar):
-                                </span>
-                                
-                                {alertasSospechosos.map((alerta, alertIdx) => {
-                                    const bloqueA = previewData[alerta.idxA];
-                                    const bloqueB = previewData[alerta.idxB];
-
-                                    if (!bloqueA || !bloqueB) return null;
-
-                                    return (
-                                        <div key={alertIdx} className="report-alert-card">
-                                            <div className="report-alert-row-main">
-                                                <span className="report-alert-text">
-                                                    ¿Es el mismo dispositivo? El ID <strong className="report-id-highlight">{alerta.idA}</strong> se parece mucho a <strong className="report-id-highlight">{alerta.idB}</strong>.
-                                                </span>
-                                                <div className="report-alert-actions">
-                                                    <button 
-                                                        onClick={() => fusionarIds(alertIdx, alerta.idA, alerta.idB)}
-                                                        className="report-btn-action-absorb"
-                                                    >
-                                                        Mantener {alerta.idA} y absorber {alerta.idB}
-                                                    </button>
-                                                    <button 
-                                                        onClick={() => fusionarIds(alertIdx, alerta.idB, alerta.idA)}
-                                                        className="report-btn-action-absorb"
-                                                    >
-                                                        Mantener {alerta.idB} y absorber {alerta.idA}
-                                                    </button>
-                                                    <button 
-                                                        onClick={() => setAlertasSospechosos(alertasSospechosos.filter((_, idx) => idx !== alertIdx))}
-                                                        className="report-btn-action-ignore"
-                                                    >
-                                                        Ignorar
-                                                    </button>
-                                                </div>
-                                            </div>
-
-                                            <div className="report-alert-row-photos">
-                                                <div className="report-alert-photo-group">
-                                                    <span className="report-alert-group-label">Fotos de {alerta.idA}:</span>
-                                                    {bloqueA.fotos.map((f, fIdx) => (
-                                                        <img key={fIdx} src={f.thumb} alt="Preview A" className="report-alert-thumb" />
-                                                    ))}
-                                                </div>
-
-                                                <div className="report-alert-divider"></div>
-
-                                                <div className="report-alert-photo-group">
-                                                    <span className="report-alert-group-label">Fotos de {alerta.idB}:</span>
-                                                    {bloqueB.fotos.map((f, fIdx) => (
-                                                        <img key={fIdx} src={f.thumb} alt="Preview B" className="report-alert-thumb" />
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        )}
-
-                        {/* Contenedor de la lista principal */}
+                        {/* CABECERA DEL MODAL */}
+                        <div className="report-modal-header">
+                            <h3>Asignación de Fotos e IDs para Informe: {type}</h3>
+                            <p>
+                                Revisa los códigos leídos. Por defecto se ha pre-seleccionado el ID de la foto de "Después" por ser la corregida.
+                            </p>
+                        </div>
+                        
+                        {/* CONTENEDOR DE FILAS */}
                         <div className="report-modal-table-container">
-                            {previewData.map((row, idIdx) => (
-                                <div key={idIdx} className="report-dispositivo-block">
-                                    <div className="report-dispositivo-info">
-                                        <span><strong>ID:</strong> {row.id}</span>
-                                        <span><strong>Ubi:</strong> {row.ubi}</span>
-                                        <div className="report-dispositivo-header">
-                                            <input 
-                                                type="date" 
-                                                value={row.fecha} 
-                                                onChange={(e) => {
-                                                    const newData = [...previewData];
-                                                    newData[idIdx].fecha = e.target.value;
-                                                    setPreviewData(newData);
-                                                }}
-                                            />
-                                        </div>
-                                    </div>
-                                    
-                                    <div className="report-grid-fotos">
-                                        {row.fotos.map((foto, fotoIdx) => (
-                                            <div key={fotoIdx} className="report-foto-card">
-                                                <img 
-                                                    src={foto.thumb} 
-                                                    alt="Escaner" 
-                                                    className="report-thumbnail" 
-                                                    title="Pasa el mouse para ampliar"
-                                                />
-                                                <select 
-                                                    className="report-select-rol"
-                                                    value={foto.rol}
-                                                    onChange={(e) => handleRoleChange(idIdx, fotoIdx, e.target.value)}
-                                                >
-                                                    <option value="antes">Antes</option>
-                                                    <option value="despues">Después</option>
-                                                    <option value="ninguno">Omitir</option>
-                                                </select>
+                            {previewData.map((row, idIdx) => {
+                                const noCoincideId = row.idAntes !== row.idDespues;
+                                return (
+                                    <div key={idIdx} className="report-dispositivo-block">
+                                        
+                                        {/* BLOQUE IZQUIERDO */}
+                                        <div className="report-info-col">
+                                            <div className="report-id-selector-container">
+                                                <span className="report-label-inline">ID:</span>
+                                                
+                                                <div className="report-pill-wrapper">
+                                                    {/* Opción Antes */}
+                                                    <label className={`report-pill-label ${row.idSeleccionado === row.idAntes ? 'active-antes' : ''} ${noCoincideId ? 'no-match' : ''}`}>
+                                                        <input 
+                                                            type="radio" 
+                                                            name={`id-selector-${idIdx}`}
+                                                            checked={row.idSeleccionado === row.idAntes}
+                                                            onChange={() => handleIdSelection(idIdx, row.idAntes)}
+                                                        />
+                                                        Antes: <span className="report-code-font">{row.idAntes}</span>
+                                                    </label>
+
+                                                    {/* Opción Después */}
+                                                    <label className={`report-pill-label ${row.idSeleccionado === row.idDespues ? 'active-despues' : ''} ${noCoincideId ? 'no-match' : ''}`}>
+                                                        <input 
+                                                            type="radio" 
+                                                            name={`id-selector-${idIdx}`}
+                                                            checked={row.idSeleccionado === row.idDespues}
+                                                            onChange={() => handleIdSelection(idIdx, row.idDespues)}
+                                                        />
+                                                        Después (✓): <span className="report-code-font">{row.idDespues}</span>
+                                                    </label>
+
+                                                    <div className="report-pill-separator"></div>
+
+                                                    {/* Input Manual */}
+                                                    <input 
+                                                        type="text" 
+                                                        value={row.idSeleccionado}
+                                                        onChange={(e) => handleIdSelection(idIdx, e.target.value.toUpperCase())}
+                                                        placeholder="✏️ Editar..."
+                                                        className={`report-manual-input ${(row.idSeleccionado !== row.idAntes && row.idSeleccionado !== row.idDespues) ? 'custom-active' : ''}`}
+                                                    />
+                                                </div>
                                             </div>
-                                        ))}
+
+                                            {/* Fila de Ubicación */}
+                                            <div className="report-ubi-row">
+                                                <span className="report-label-bold">Ubi:</span> 
+                                                <span className={row.ubi === 'N/A' || row.ubi === 'No encontrado' ? 'report-ubi-na' : ''}>{row.ubi}</span>
+                                            </div>
+
+                                            {/* Input de Fecha */}
+                                            <div className="report-date-row">
+                                                <input 
+                                                    type="date" 
+                                                    value={row.fecha} 
+                                                    className="report-date-input"
+                                                    onChange={(e) => {
+                                                        const newData = [...previewData];
+                                                        newData[idIdx].fecha = e.target.value;
+                                                        setPreviewData(newData);
+                                                    }}
+                                                />
+                                            </div>
+                                        </div>
+
+                                        {/* BLOQUE DERECHO */}
+                                        <div className="report-grid-fotos">
+                                            {row.fotos.map((foto, fotoIdx) => (
+                                                <div key={fotoIdx} className="report-foto-item">
+                                                    <img 
+                                                        src={foto.thumb} 
+                                                        alt="Scanner" 
+                                                        className="report-img-thumbnail"
+                                                    />
+                                                    <select 
+                                                        className="report-select-rol"
+                                                        value={foto.rol}
+                                                        onChange={(e) => handleRoleChange(idIdx, fotoIdx, e.target.value)}
+                                                    >
+                                                        <option value="antes">Antes</option>
+                                                        <option value="despues">Después</option>
+                                                        <option value="ninguno">Omitir</option>
+                                                    </select>
+                                                </div>
+                                            ))}
+                                        </div>
+
                                     </div>
-                                </div>
-                            ))}
+                                );
+                            })}
                         </div>
 
+                        {/* ACCIONES DEL MODAL */}
                         <div className="report-modal-actions">
                             <button onClick={() => setShowModal(false)} className="report-btn-cancel">
                                 Cancelar
@@ -414,6 +395,7 @@ const ReportFiller = ({ results, type, templatePath, className }) => {
                                 {isProcessing ? "Procesando informe..." : "Generar informe"}
                             </button>
                         </div>
+
                     </div>
                 </div>
             )}

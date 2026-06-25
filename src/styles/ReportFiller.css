@@ -1,4 +1,6 @@
-/* Importamos la fuente premium */
+/* ==========================================================================
+   VARIABLES Y FUENTE PREMIUM
+   ========================================================================== */
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;800&display=swap');
 
 :root {
@@ -9,18 +11,23 @@
     --text-muted: #64748b;
 }
 
+/* ==========================================================================
+   ESTILOS BASE DEL MODAL (CENTRADO ABSOLUTO E INFALIBLE)
+   ========================================================================== */
+
 /* Fondo del modal con efecto bokeh */
 .report-modal-overlay {
-    position: fixed;
-    top: 0; left: 0; right: 0; bottom: 0;
+    position: fixed !important;
+    top: 0 !important; 
+    left: 0 !important; 
+    right: 0 !important; 
+    bottom: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
     background: rgba(15, 23, 42, 0.65);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    z-index: 1000;
-    font-family: 'Plus Jakarta Sans', sans-serif; /* Fuente base */
+    
+    z-index: 99999 !important; /* Prioridad máxima por sobre layouts externos */
+    font-family: 'Plus Jakarta Sans', sans-serif;
 }
 
 /* Ventana interna del modal */
@@ -28,40 +35,81 @@
     background: #ffffff;
     padding: 25px;
     border-radius: 24px;
-    width: 95%;
-    max-width: 900px;
-    max-height: 85vh;
-    display: flex;
-    flex-direction: column;
+    width: 95vw !important; /* Usa el ancho de la pantalla directamente */
+    max-width: 900px !important;
+    
+    /* Limitadores estrictos de altura */
+    height: 85vh !important;
+    max-height: 85vh !important;
+    
+    /* Organización interna en flex */
+    display: flex !important;
+    flex-direction: column !important;
+    
     box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
     color: var(--text-main);
     border: 1px solid rgba(255, 255, 255, 0.8);
     font-family: 'Plus Jakarta Sans', sans-serif;
+
+    /* --- TRUCO CIENTÍFICO DE CENTRADO EN PANTALLA --- */
+    position: fixed !important;
+    top: 50% !important;  /* Empuja el borde superior al centro exacto de la pantalla */
+    left: 50% !important; /* Empuja el borde izquierdo al centro exacto de la pantalla */
+    
+    /* El transform resta exactamente la mitad del ancho y alto del propio modal, 
+       lo que lo deja perfectamente alineado al centro sin importar el contenedor padre */
+    transform: translate(-50%, -50%) !important; 
+    
+    margin: 0 !important; /* Elimina cualquier margen que esté empujando el diseño */
+    box-sizing: border-box !important;
 }
 
-.report-modal-content h3 {
-    margin: 0 0 15px 0;
+/* Cabecera interna del modal */
+.report-modal-header h3 {
+    margin: 0 0 6px 0;
     font-size: 1.25rem;
     font-weight: 800;
     color: #0f172a;
     letter-spacing: -0.02em;
-    font-family: 'Plus Jakarta Sans', sans-serif;
 }
 
-/* Scroll vertical principal */
+.report-modal-header p {
+    margin: 0 0 15px 0;
+    font-size: 13px;
+    color: var(--text-muted);
+    line-height: 1.4;
+}
+
+/* Scroll vertical principal de la lista */
 .report-modal-table-container {
-    overflow-y: auto;
-    flex: 1;
+    overflow-y: auto !important;
+    flex: 1 !important; /* Absorbe dinámicamente todo el espacio entre la cabecera y los botones */
     padding-right: 8px;
-    margin-bottom: 10px;
+    margin-top: 10px;
+    margin-bottom: 20px; /* Margen de seguridad para que no choque con los botones */
+    min-height: 0; /* Truco clave en flexbox para que el scroll funcione correctamente */
 }
 
-/* Fila compacta por cada Dispositivo */
+.report-modal-actions {
+    display: flex;
+    justify-content: center;
+    gap: 16px;
+    border-top: 1px solid #f1f5f9;
+    padding-top: 20px;
+    background: #ffffff;
+    flex-shrink: 0; /* Evita que los botones se aplasten o achiquen si hay muchas filas */
+}
+
+/* ==========================================================================
+   BLOQUES DE DISPOSITIVOS Y FILAS COMPACTAS
+   ========================================================================== */
+
+/* Fila contenedora por cada Dispositivo */
 .report-dispositivo-block {
     background: #ffffff;
     border: 1px solid #f1f5f9;
     border-radius: 14px;
-    padding: 10px 16px;
+    padding: 12px 16px;
     margin-bottom: 10px;
     display: flex;
     align-items: center;
@@ -75,24 +123,136 @@
     background-color: #f8fafc;
 }
 
-/* Información de ID y Ubicación */
-.report-dispositivo-info {
+/* Columna Izquierda: Toda la info del dispositivo */
+.report-info-col {
     display: flex;
     flex-direction: column;
-    gap: 4px;
-    min-width: 250px;
-    font-family: 'Plus Jakarta Sans', sans-serif;
+    gap: 6px;
+    flex: 1;
 }
 
-.report-dispositivo-info span {
+/* ==========================================================================
+   DISEÑO DE LAS CÁPSULAS HORIZONTALES (ID SELECTOR)
+   ========================================================================== */
+
+.report-id-selector-container {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.report-label-inline {
     font-size: 13px;
-    color: var(--text-main);
+    font-weight: 800;
+    color: #0f172a;
 }
 
-/* Input tipo Date */
-.report-dispositivo-header input[type="date"] {
+/* Contenedor ovalado gris de fondo */
+.report-pill-wrapper {
+    display: flex;
+    align-items: center;
+    background: #f1f5f9;
+    padding: 3px;
+    border-radius: 30px;
+    gap: 2px;
+}
+
+/* Cada una de las opciones tipo pastilla */
+.report-pill-label {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 12px;
+    border-radius: 20px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #475569;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    user-select: none;
+}
+
+.report-pill-label input[type="radio"] {
+    margin: 0;
+    cursor: pointer;
+}
+
+/* Pastilla "Antes" seleccionada */
+.report-pill-label.active-antes {
+    background: #ffedd5;
+    color: #ea580c;
+}
+
+/* Pastilla "Después" seleccionada */
+.report-pill-label.active-despues {
+    background: #dcfce7;
+    color: #15803d;
+}
+
+.report-pill-separator {
+    width: 1px;
+    height: 14px;
+    background: #cbd5e1;
+    margin: 0 4px;
+}
+
+/* Input manual de texto para editar ID dentro de la pastilla */
+.report-manual-input {
+    border: none;
+    background: transparent;
     font-family: 'Plus Jakarta Sans', sans-serif;
+    font-size: 11px;
+    font-weight: 600;
     padding: 4px 10px;
+    outline: none;
+    color: var(--text-main);
+    width: 100px;
+    transition: all 0.2s ease;
+}
+
+.report-manual-input::placeholder {
+    color: #94a3b8;
+}
+
+.report-manual-input.custom-active {
+    background: #e0f2fe;
+    color: #0369a1;
+    border-radius: 20px;
+}
+
+.report-code-font {
+    font-family: monospace;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+/* ==========================================================================
+   UBICACIÓN Y FECHAS
+   ========================================================================== */
+
+.report-ubi-row, 
+.report-date-row {
+    font-size: 12px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.report-label-bold {
+    font-weight: 700;
+    color: #334155;
+}
+
+.report-ubi-na {
+    color: #ef4444;
+    font-weight: 600;
+}
+
+/* Input tipo Date Ovalado */
+.report-date-input {
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    padding: 4px 12px;
     border: 1px solid #cbd5e1;
     border-radius: 50px;
     font-size: 11px;
@@ -100,67 +260,69 @@
     color: var(--text-main);
     background: #ffffff;
     outline: none;
-    margin-top: 4px;
-    width: 120px;
+    width: 125px;
 }
 
-/* Contenedor horizontal de fotos */
+/* ==========================================================================
+   BLOQUE DERECHO: FOTOS Y THUMBNAILS (CORREGIDO EL DESCUADRE GIGANTE)
+   ========================================================================== */
+
+/* Contenedor horizontal de fotos de la fila */
 .report-grid-fotos {
     display: flex;
     gap: 12px;
     overflow-x: auto;
-    padding: 6px 2px;
+    padding: 4px 2px;
     max-width: 420px;
     scrollbar-width: thin;
 }
 
-.report-foto-card {
+/* Item individual: imagen + select dropdown */
+.report-foto-item {
     display: flex;
     flex-direction: column;
     align-items: center;
     gap: 6px;
+    flex-shrink: 0; /* Evita que se colapsen en pantallas chicas */
 }
 
+/* Miniatura blindada para que no crezca de forma gigante */
+.report-img-thumbnail,
 .report-thumbnail {
-    width: 50px;
-    height: 50px;
-    object-fit: cover;
+    width: 50px !important;
+    height: 50px !important;
+    object-fit: cover !important; /* Recorta perfectamente la foto al centro */
     border-radius: 8px;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
     border: 1px solid #e2e8f0;
+    flex-shrink: 0 !important;
 }
 
-/* Selector Dropdown */
+/* Selector Dropdown de rol debajo de la foto */
 .report-select-rol {
-    font-family: 'Plus Jakarta Sans', sans-serif; /* Forzado */
+    font-family: 'Plus Jakarta Sans', sans-serif;
     font-size: 10px;
-    font-weight: 600;
+    font-weight: 700;
     padding: 2px 4px;
     border: 1px solid #cbd5e1;
     border-radius: 6px;
     background-color: #ffffff;
     color: #475569;
     outline: none;
-    width: 75px;
+    width: 78px;
     text-align: center;
+    cursor: pointer;
 }
 
-/* Barra inferior de acciones */
-.report-modal-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 12px;
-    border-top: 1px solid #f1f5f9;
-    padding-top: 15px;
-}
 
-/* --- BOTÓN CANCELAR CON LA FUENTE PREMUM --- */
+
+/* Botón Cancelar */
 .report-btn-cancel {
-    font-family: 'Plus Jakarta Sans', sans-serif; /* FORZADO */
+    font-family: 'Plus Jakarta Sans', sans-serif;
     background: #e2e8f0;
     color: #475569;
     border: none;
-    padding: 10px 20px;
+    padding: 10px 24px;
     border-radius: 50px;
     font-weight: 600;
     font-size: 13px;
@@ -174,13 +336,13 @@
     transform: translateY(-1px);
 }
 
-/* --- BOTÓN GENERAR CON LA FUENTE PREMIUM --- */
+/* Botón Generar Informe (Verde Corp) */
 .report-btn-confirm {
-    font-family: 'Plus Jakarta Sans', sans-serif; /* FORZADO */
+    font-family: 'Plus Jakarta Sans', sans-serif;
     background: var(--primary-green);
     color: white;
     border: none;
-    padding: 10px 20px;
+    padding: 10px 28px;
     border-radius: 50px;
     font-weight: 600;
     font-size: 13px;
@@ -202,7 +364,10 @@
     transform: none;
 }
 
-/* Scrollbars */
+/* ==========================================================================
+   PERSONALIZACIÓN DE SCROLLBARS
+   ========================================================================== */
+
 .report-modal-table-container::-webkit-scrollbar,
 .report-grid-fotos::-webkit-scrollbar {
     height: 4px;
@@ -215,7 +380,7 @@
 }
 
 /* ==========================================================================
-   BANNER DE ALERTAS PARA IDS SOSPECHOSOS (ReportFiller)
+   BANNER DE ALERTAS PARA IDS SOSPECHOSOS
    ========================================================================== */
 
 .report-alert-container {
@@ -228,27 +393,21 @@
     flex-direction: column;
     gap: 12px;
     box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.02);
-    
-    /* --- CONTROL DE TAMAÑO Y SCROLL INTELIGENTE --- */
-    max-height: 280px;        /* Evita que el cuadro se agrande demasiado */
-    overflow-y: auto;         /* Activa el scroll vertical solo si es necesario */
-    padding-right: 10px;      /* Espacio extra para que el scroll no tape los botones */
+    max-height: 280px;        
+    overflow-y: auto;         
+    padding-right: 10px;      
 }
 
-/* Opcional: Dale un diseño más fino a la barra de scroll del banner */
 .report-alert-container::-webkit-scrollbar {
     width: 6px;
 }
-
 .report-alert-container::-webkit-scrollbar-track {
     background: #fff7ed; 
 }
-
 .report-alert-container::-webkit-scrollbar-thumb {
     background: #fed7aa; 
     border-radius: 10px;
 }
-
 .report-alert-container::-webkit-scrollbar-thumb:hover {
     background: #f97316; 
 }
@@ -296,7 +455,6 @@
     flex-shrink: 0;
 }
 
-/* Botones de Unificación / Absorción */
 .report-btn-action-absorb {
     background-color: #ffedd5;
     border: 1px solid #fed7aa;
@@ -315,7 +473,6 @@
     transform: translateY(-1px);
 }
 
-/* Botón de Ignorar Alerta */
 .report-btn-action-ignore {
     background-color: #f1f5f9;
     border: 1px solid #e2e8f0;
@@ -333,7 +490,6 @@
     color: #334155;
 }
 
-/* Contenedor de visualización de fotos */
 .report-alert-row-photos {
     display: flex;
     gap: 20px;
@@ -355,7 +511,6 @@
     color: #64748b;
 }
 
-/* Estilo para las miniaturas del banner */
 .report-alert-thumb {
     width: 45px;
     height: 45px;
@@ -372,7 +527,6 @@
     z-index: 10;
 }
 
-/* Divisor vertical entre ambos grupos de fotos */
 .report-alert-divider {
     border-left: 1px solid #e2e8f0;
     height: 35px;
