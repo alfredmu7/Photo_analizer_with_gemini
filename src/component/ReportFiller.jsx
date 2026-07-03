@@ -518,7 +518,7 @@ const ReportFiller = ({ results, type, templatePath, className, system = 'GENERA
                                 })
                             ) : (
                                 <div style={{ textAlign: 'center', padding: '30px', color: '#64748b', fontSize: '14px' }}>
-                                    ⚠️ No se encontraron IDs que coincidan con "{searchTerm}"
+                                    ⚠️ No se encuentran el ID "{searchTerm}"
                                 </div>
                             )}
                         </div>
