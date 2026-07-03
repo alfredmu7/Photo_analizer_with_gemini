@@ -8,20 +8,22 @@ import '../styles/ReportFiller.css';
 
 import wordIcon from '../assets/word.png';
 import restartIcon from '../assets/restart.png';
+import undo from '../assets/undo.png';
 
 const ReportFiller = ({ results, type, templatePath, className, system = 'GENERAL' }) => {
     const [showModal, setShowModal] = useState(false);
     const [previewData, setPreviewData] = useState([]);
     const [isProcessing, setIsProcessing] = useState(false);
     
-    // ESTADO PARA LA BARRA DE FILTRADO
+    // ESTADOS NUEVOS: FILTRADO E HISTORIAL PARA UNDO
     const [searchTerm, setSearchTerm] = useState("");
+    const [history, setHistory] = useState([]); // Guarda los estados anteriores de previewData
 
     // LLAVES ÚNICAS DE MEMORIA LOCAL
     const LOCAL_STORAGE_KEY = `report_base64_prog_${system}_${type}`;
     const DELETED_ITEMS_KEY = `report_deleted_${system}_${type}`;
 
-    // --- EFECTO 1: CARGA INICIAL DESDE LOCALSTORAGE AL MONTAR ---
+    // --- EFECTO 1: CARGA INICIAL DESDE LOCALSTORAGE ---
     useEffect(() => {
         const savedDataStr = localStorage.getItem(LOCAL_STORAGE_KEY);
         if (savedDataStr) {
@@ -36,14 +38,34 @@ const ReportFiller = ({ results, type, templatePath, className, system = 'GENERA
         }
     }, [LOCAL_STORAGE_KEY]);
 
-    // --- EFECTO 2: GUARDAR TODO AUTOMÁTICAMENTE CUANDO CAMBIE EL ESTADO ---
+    // --- EFECTO 2: GUARDAR AUTOMÁTICAMENTE ---
     useEffect(() => {
         if (previewData && previewData.length > 0) {
             localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(previewData));
         }
     }, [previewData, LOCAL_STORAGE_KEY]);
 
-    // --- HELPER: CONVERTIR FILE BINARIO O URL BLOB A BASE64 OPTIMIZADO ---
+    // --- HELPER: GUARDAR ESTADO EN EL HISTORIAL ANTES DE CAMBIOS ---
+    const saveToHistory = (currentState) => {
+        // Guardamos una copia profunda del estado actual antes de modificarlo
+        setHistory(prev => [...prev, JSON.parse(JSON.stringify(currentState))]);
+    };
+
+    // --- FUNCIÓN DE DESHACER (UNDO) ---
+    const handleUndo = () => {
+        if (history.length === 0) return;
+        
+        // Recuperar el último estado guardado
+        const previousState = history[history.length - 1];
+        
+        // Remover el último elemento del historial
+        setHistory(prev => prev.slice(0, -1));
+        
+        // Restaurar los datos de previsualización
+        setPreviewData(previousState);
+    };
+
+    // --- HELPER: CONVERTIR FILE BINARIO O URL BLOB A BASE64 ---
     const fileToBase64 = (fileOrBlobUrl) => {
         return new Promise((resolve) => {
             if (!fileOrBlobUrl) return resolve(null);
@@ -78,7 +100,7 @@ const ReportFiller = ({ results, type, templatePath, className, system = 'GENERA
         });
     };
 
-    // --- FUNCIÓN DE ESTAMPADO FINAL (MARCA DE AGUA PARA EL INFORME) ---
+    // --- FUNCIÓN DE ESTAMPADO FINAL (MARCA DE AGUA) ---
     const applyWatermark = (base64Src, dateStr) => {
         return new Promise((resolve) => {
             if (!base64Src || !dateStr) return resolve(null);
@@ -133,8 +155,10 @@ const ReportFiller = ({ results, type, templatePath, className, system = 'GENERA
         return id.toUpperCase().replace(/([A-Z])0+/g, '$1').replace(/[^A-Z0-9]/g, '');
     };
 
-    // --- ELIMINAR ELEMENTO USANDO SU ID ORIGINAL PARA EVITAR ERRORES EN FILTRADO ---
+    // --- ELIMINAR ELEMENTO ---
     const handleRemoveItem = (idOriginal) => {
+        saveToHistory(previewData); // Guardar historial antes de borrar
+        
         const deletedStr = localStorage.getItem(DELETED_ITEMS_KEY);
         const deletedIds = deletedStr ? JSON.parse(deletedStr) : [];
         
@@ -155,7 +179,8 @@ const ReportFiller = ({ results, type, templatePath, className, system = 'GENERA
 
     // --- ENTRADA AL CONFIGURADOR ASÍNCRONO ---
     const openConfig = async () => {
-        setSearchTerm(""); // Resetear filtro al abrir
+        setSearchTerm(""); 
+        setHistory([]); // Limpiar historial al abrir ventana limpia
         const savedDataStr = localStorage.getItem(LOCAL_STORAGE_KEY);
         let currentModalState = [];
         
@@ -229,8 +254,8 @@ const ReportFiller = ({ results, type, templatePath, className, system = 'GENERA
         setShowModal(true);
     };
 
-    // --- MANEJADORES MODIFICADOS PARA BUSCAR POR idOriginal ---
     const handleRoleChange = (idOriginal, fotoIdx, nuevoRol) => {
+        saveToHistory(previewData); // Guardar historial antes de cambiar roles
         setPreviewData(prev => prev.map((item) => {
             if (item.idOriginal !== idOriginal) return item;
             const updatedFotos = item.fotos.map((f, fIdx) => {
@@ -242,10 +267,50 @@ const ReportFiller = ({ results, type, templatePath, className, system = 'GENERA
         }));
     };
 
+    // --- LÓGICA CORE: SELECCIÓN/EDICIÓN DE ID CON CORRECCIÓN Y FUSIÓN AUTOMÁTICA ---
     const handleIdSelection = (idOriginal, valorNuevo) => {
-        setPreviewData(prev => prev.map((row) => 
-            row.idOriginal === idOriginal ? { ...row, idSeleccionado: valorNuevo } : row
-        ));
+        // Guardar estado actual en el historial antes de realizar la fusión/cambio
+        saveToHistory(previewData);
+
+        const targetValue = valorNuevo.toUpperCase();
+
+        setPreviewData(prev => {
+            // Encuentra la fila que el usuario está editando actualmente
+            const currentRow = prev.find(r => r.idOriginal === idOriginal);
+            if (!currentRow) return prev;
+
+            // Revisamos si el nuevo ID ya existe en OTRA fila de la lista actual (FUSIÓN)
+            const duplicateRow = prev.find(r => r.idOriginal !== idOriginal && r.idSeleccionado.toUpperCase() === targetValue);
+
+            if (duplicateRow) {
+                // ¡Hay coincidencia! Vamos a unir las fotos de la fila editada dentro de la fila duplicada existente
+                return prev.map(row => {
+                    if (row.idOriginal === duplicateRow.idOriginal) {
+                        // Combinamos las fotos de ambos bloques evitando duplicados exactos de b64Data si existieran
+                        const combinacionFotos = [...row.fotos];
+                        currentRow.fotos.forEach(f => {
+                            if (!combinacionFotos.some(existente => existente.b64Data === f.b64Data)) {
+                                // Forzamos un rol coherente temporal si ya están ocupados el 'antes' y 'despues'
+                                const tieneAntes = combinacionFotos.some(x => x.rol === 'antes');
+                                const tieneDespues = combinacionFotos.some(x => x.rol === 'despues');
+                                
+                                let nuevoRolAsignado = f.rol;
+                                if (f.rol === 'antes' && tieneAntes) nuevoRolAsignado = !tieneDespues ? 'despues' : 'ninguno';
+                                if (f.rol === 'despues' && tieneDespues) nuevoRolAsignado = !tieneAntes ? 'antes' : 'ninguno';
+
+                                combinacionFotos.push({ ...f, rol: nuevoRolAsignado });
+                            }
+                        });
+
+                        return { ...row, fotos: combinacionFotos };
+                    }
+                    return row;
+                }).filter(row => row.idOriginal !== idOriginal); // Eliminamos la fila vieja que ya fue absorbida
+            }
+
+            // Si no colisiona con ningún ID existente, simplemente actualiza el texto de forma normal
+            return prev.map(row => row.idOriginal === idOriginal ? { ...row, idSeleccionado: targetValue } : row);
+        });
     };
 
     const handleDateChange = (idOriginal, nuevaFecha) => {
@@ -254,12 +319,12 @@ const ReportFiller = ({ results, type, templatePath, className, system = 'GENERA
         ));
     };
 
-    // --- LIMPIEZA COMPLETA ---
     const clearProgress = () => {
-        if (window.confirm("¿Seguro que deseas reiniciar este informe? (Esto también restaurará los elementos que habías borrado con la X)")) {
+        if (window.confirm("¿Seguro que deseas reiniciar este informe?")) {
             localStorage.removeItem(LOCAL_STORAGE_KEY);
             localStorage.removeItem(DELETED_ITEMS_KEY);
             setPreviewData([]);
+            setHistory([]);
         }
     };
 
@@ -334,18 +399,16 @@ const ReportFiller = ({ results, type, templatePath, className, system = 'GENERA
         setIsProcessing(false);
     };
 
-    // --- LÓGICA DE FILTRADO INTELIGENTE ---
+    // --- FILTRADO INTELIGENTE ---
     const queryClean = searchTerm.trim().toUpperCase();
     const filteredData = previewData.filter(row => {
-        // Si hay menos de 2 caracteres, no se aplica el filtro dinámico
         if (queryClean.length < 2) return true;
-
-        const matchOriginal = row.idOriginal?.toUpperCase().includes(queryClean);
-        const matchSeleccionado = row.idSeleccionado?.toUpperCase().includes(queryClean);
-        const matchAntes = row.idAntes?.toUpperCase().includes(queryClean);
-        const matchDespues = row.idDespues?.toUpperCase().includes(queryClean);
-
-        return matchOriginal || matchSeleccionado || matchAntes || matchDespues;
+        return (
+            row.idOriginal?.toUpperCase().includes(queryClean) ||
+            row.idSeleccionado?.toUpperCase().includes(queryClean) ||
+            row.idAntes?.toUpperCase().includes(queryClean) ||
+            row.idDespues?.toUpperCase().includes(queryClean)
+        );
     });
 
     return (
@@ -359,7 +422,7 @@ const ReportFiller = ({ results, type, templatePath, className, system = 'GENERA
                 <button
                     onClick={clearProgress} 
                     style={{ background: 'transparent', border: 'none', padding: '6px 5px', cursor: 'pointer', fontSize: '18px' }}
-                    title="Restablecer reporte para iniciar mes nuevo"
+                    title="Restablecer reporte"
                 >
                     <img src={restartIcon} alt="restart" style={{ width: '25px', marginRight: '8px' }} />
                 </button>
@@ -370,49 +433,75 @@ const ReportFiller = ({ results, type, templatePath, className, system = 'GENERA
                     <div className="report-modal-content">
                         
                         <div className="report-modal-header" style={{ display: 'flex', flexDirection: 'column', gap: '10px', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px' }}>
-                            <div style={{ display: 'flex', justifyContent: 'between', alignItems: 'center', width: '100%' }}>
-                                <h3 style={{ margin: 6 }}>Asignación: {type}</h3>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+                                <h3 style={{ margin: 0 }}>Asignación: {type}</h3>
                                 
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                    {/* BOTÓN DE DESHACER (UNDO) CON ICONO */}
+                                    <button
+                                        onClick={handleUndo}
+                                        disabled={history.length === 0}
+                                        style={{
+                                            background: 'transparent',
+                                            border: 'none',
+                                            padding: '4px 1px',
+                                            cursor: history.length > 0 ? 'pointer' : 'not-allowed',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            opacity: history.length > 0 ? 1 : 0.35, // Se atenúa si no hay historial
+                                            transition: 'opacity 0.2s ease, transform 0.1s ease',
+                                        }}
+                                        title={history.length > 0 ? `Deshacer último cambio` : "No hay cambio para deshacer"}
+                                        onMouseDown={(e) => history.length > 0 && (e.currentTarget.style.transform = 'scale(0.95)')}
+                                        onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
+                                    >
+                                        <img 
+                                            src={undo} 
+                                            alt="Deshacer" 
+                                            style={{ 
+                                                width: '22px', 
+                                                height: '22px', 
+                                                objectFit: 'contain',
+                                                 
+                                            }} 
+                                        />
+                                        {history.length > 0 && (
+                                            <span style={{ fontSize: '10px', color: '#b1b1b1', fontWeight: '400' }}>
+                                                {history.length}
+                                            </span>
+                                        )}
+                                    </button>
+
+                                    
+                                </div>
                             </div>
 
-                            {/* BARRA DE FILTRADO MINIMALISTA */}
+                            {/* BARRA DE FILTRADO */}
                             <div style={{ width: '100%', position: 'relative' }}>
                                 <input 
                                     type="text"
-                                    placeholder="🔍 ¿ Que ID buscas?"
+                                    placeholder="¿Que ID necesitas encontrar?"
                                     value={searchTerm}
                                     onChange={(e) => setSearchTerm(e.target.value)}
                                     style={{
                                         width: '100%',
-                                        padding: '8px 12px',
-                                        fontSize: '13px',
+                                        padding: '12px 12px',
+                                        fontSize: '12px',
                                         borderRadius: '25px',
-                                        border: '1px solid #cbd5e1',
+                                        border: '1px #cbd5e1',
                                         outline: 'none',
                                         boxSizing: 'border-box',
-                                        backgroundColor: '#f8fafc',
-                                        transition: 'border-color 0.2s'
+                                        backgroundColor: '#f0f0f0',
+                                        
                                     }}
-                                    onFocus={(e) => e.target.style.borderColor = '#0284c7'}
-                                    onBlur={(e) => e.target.style.borderColor = '#cbd5e1'}
                                 />
-                                    <span style={{ fontSize: '10px', color: '#64748b', fontWeight: '500'}}>
-                                    Mostrando {filteredData.length} de {previewData.length} ítems
-                                </span>
+                                        <span style={{ fontSize: '10px', color: '#9da2a8', fontWeight: '500' }}>
+                                            Mostrando {filteredData.length} de {previewData.length} ítems
+                                        </span>
                                 {searchTerm && (
                                     <button 
                                         onClick={() => setSearchTerm("")}
-                                        style={{
-                                            position: 'absolute',
-                                            right: '10px',
-                                            top: '50%',
-                                            transform: 'translateY(-50%)',
-                                            background: 'transparent',
-                                            border: 'none',
-                                            color: '#94a3b8',
-                                            cursor: 'pointer',
-                                            fontSize: '14px'
-                                        }}
+                                        style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer' }}
                                     >
                                         ✕
                                     </button>
@@ -422,35 +511,19 @@ const ReportFiller = ({ results, type, templatePath, className, system = 'GENERA
 
                         <div className="report-modal-table-container">
                             {filteredData.length > 0 ? (
-                                filteredData.map((row, index) => {
-                                    // Mantenemos un identificador único real para los name de los radios
+                                filteredData.map((row) => {
                                     const radioGroupKey = `ids-${row.idOriginal}`;
                                     
                                     return (
                                         <div key={row.idOriginal} className="report-dispositivo-block" style={{ position: 'relative' }}>
                                             
-                                            {/* BOTÓN X MINIMALISTA */}
                                             <button 
                                                 type="button"
                                                 onClick={() => handleRemoveItem(row.idOriginal)}
                                                 style={{
-                                                    position: 'absolute',
-                                                    top: '8px',
-                                                    right: '8px',
-                                                    background: 'transparent',
-                                                    color: '#94a3b8',
-                                                    border: 'none',
-                                                    fontSize: '16px',
-                                                    cursor: 'pointer',
-                                                    padding: '4px 8px',
-                                                    borderRadius: '4px',
-                                                    lineHeight: '1',
-                                                    transition: 'all 0.2s ease',
-                                                    fontWeight: 'bold'
+                                                    position: 'absolute', top: '8px', right: '8px', background: 'transparent', color: '#94a3b8', border: 'none', fontSize: '16px', cursor: 'pointer', fontWeight: 'bold'
                                                 }}
-                                                onMouseEnter={(e) => { e.target.style.color = '#ef4444'; e.target.style.background = '#fef2f2'; }}
-                                                onMouseLeave={(e) => { e.target.style.color = '#94a3b8'; e.target.style.background = 'transparent'; }}
-                                                title="Eliminar este ID de este informe"
+                                                title="Eliminar este ID"
                                             >
                                                 ×
                                             </button>
@@ -476,10 +549,19 @@ const ReportFiller = ({ results, type, templatePath, className, system = 'GENERA
                                                             />
                                                             D: {row.idDespues}
                                                         </label>
+                                                        {/* Al presionar 'Enter' o perder el foco se puede consolidar la edición */}
                                                         <input 
                                                             type="text" 
                                                             value={row.idSeleccionado} 
-                                                            onChange={(e) => handleIdSelection(row.idOriginal, e.target.value.toUpperCase())} 
+                                                            onChange={(e) => {
+                                                                // Permite escritura fluida sin disparar inmediatamente la fusión en cada carácter
+                                                                const val = e.target.value;
+                                                                setPreviewData(prev => prev.map(r => r.idOriginal === row.idOriginal ? { ...r, idSeleccionado: val } : r));
+                                                            }} 
+                                                            onBlur={(e) => handleIdSelection(row.idOriginal, e.target.value)}
+                                                            onKeyDown={(e) => {
+                                                                if (e.key === 'Enter') handleIdSelection(row.idOriginal, e.target.value);
+                                                            }}
                                                             className="report-manual-input" 
                                                         />
                                                     </div>
@@ -518,7 +600,7 @@ const ReportFiller = ({ results, type, templatePath, className, system = 'GENERA
                                 })
                             ) : (
                                 <div style={{ textAlign: 'center', padding: '30px', color: '#64748b', fontSize: '14px' }}>
-                                    ⚠️ No se encuentran el ID "{searchTerm}"
+                                     Oop! No veo un ID {searchTerm}
                                 </div>
                             )}
                         </div>

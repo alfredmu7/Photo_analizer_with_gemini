@@ -517,7 +517,7 @@ const ScannerTerminal = () => {
 
             {accessMode === 'full' && (
               <div className="action-buttons-container" style={{ display: 'flex', gap: '10px' }}>
-                <ReportFiller results={results} type="Reporte Otrosí" templatePath="/Informe_mto_otrosi_fads.docx" className="btn-platform" />
+                <ReportFiller results={results} type="Informe Otrosí" templatePath="/Informe_mto_otrosi_fads.docx" className="btn-platform" />
               </div>
             )}
 
