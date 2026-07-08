@@ -17,34 +17,89 @@ const ReportFiller = ({ results, type, templatePath, className, system = 'GENERA
     
     // ESTADOS NUEVOS: FILTRADO E HISTORIAL PARA UNDO
     const [searchTerm, setSearchTerm] = useState("");
-    const [history, setHistory] = useState([]); // Guarda los estados anteriores de previewData
+    const [history, setHistory] = useState([]); 
 
     // LLAVES ÚNICAS DE MEMORIA LOCAL
     const LOCAL_STORAGE_KEY = `report_base64_prog_${system}_${type}`;
     const DELETED_ITEMS_KEY = `report_deleted_${system}_${type}`;
 
-    // --- EFECTO 1: CARGA INICIAL DESDE LOCALSTORAGE ---
-    useEffect(() => {
-        const savedDataStr = localStorage.getItem(LOCAL_STORAGE_KEY);
-        if (savedDataStr) {
-            try {
-                const parsed = JSON.parse(savedDataStr);
-                if (parsed && parsed.length > 0) {
-                    setPreviewData(parsed);
-                }
-            } catch (e) {
-                console.error("Error al parsear el progreso guardado:", e);
+    // ==========================================
+// 🔄 CICLOS DE VIDA CORREGIDOS PARA REACCIONAR A LOS LOTES
+// ==========================================
+
+// --- EFECTO 1: CARGA INICIAL DESDE LOCALSTORAGE AL MONTAR ---
+useEffect(() => {
+    const savedDataStr = localStorage.getItem(LOCAL_STORAGE_KEY);
+    if (savedDataStr) {
+        try {
+            const parsed = JSON.parse(savedDataStr);
+            if (parsed && parsed.length > 0) {
+                setPreviewData(parsed);
+                return; // Si ya hay datos locales guardados, respetamos el caché
             }
+        } catch (e) {
+            console.error("Error al parsear el progreso guardado:", e);
         }
-    }, [LOCAL_STORAGE_KEY]);
+    }
+}, [LOCAL_STORAGE_KEY]);
 
-    // --- EFECTO 2: GUARDAR AUTOMÁTICAMENTE ---
-    useEffect(() => {
-        if (previewData && previewData.length > 0) {
-            localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(previewData));
-        }
-    }, [previewData, LOCAL_STORAGE_KEY]);
+// --- EFECTO 2: GUARDAR AUTOMÁTICAMENTE CUANDO HAYA CAMBIOS REALES ---
+useEffect(() => {
+    // Guardamos en el localStorage solo si realmente hay ítems en la previsualización
+    if (previewData && previewData.length > 0) {
+        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(previewData));
+    }
+}, [previewData, LOCAL_STORAGE_KEY]);
 
+// --- EFECTO NUEVO: ESCUCHAR INCORPORACIÓN DE NUEVAS FOTOS POR LOTE/RESULTADOS ---
+useEffect(() => {
+    if (results && results.length > 0) {
+        // Ejecutamos la lógica de mapeo silenciosamente para poblar el previewData en segundo plano
+        const sincronizarFotosEntrantes = async () => {
+            const today = new Date().toISOString().split('T')[0];
+            const savedDataStr = localStorage.getItem(LOCAL_STORAGE_KEY);
+            let currentItems = savedDataStr ? JSON.parse(savedDataStr) : [...previewData];
+
+            const seenNormalizedIdsInModal = new Set(currentItems.map(item => normalizeIdForMatching(item.idOriginal)));
+            let huboCambios = false;
+
+            for (const res of results) {
+                if (!res || !res.id) continue;
+                const currentNormalized = normalizeIdForMatching(res.id);
+
+                // Si esta foto ya está procesada en este informe, la ignoramos para evitar bucles
+                if (seenNormalizedIdsInModal.has(currentNormalized)) continue;
+
+                // Estructuramos la foto entrante
+                const archivoAGuardar = res.originalFile || res.thumb;
+                const base64Generado = await fileToBase64(archivoAGuardar);
+
+                currentItems.push({
+                    idOriginal: res.id,
+                    idSeleccionado: res.id,
+                    idAntes: res.id,
+                    idDespues: res.id,
+                    ubi: res.masterInfo?.UBICACION || "No encontrado",
+                    fecha: today,
+                    fotos: [{
+                        b64Data: base64Generado,
+                        rol: 'antes',
+                        idDetectadoOCR: res.id
+                    }]
+                });
+                seenNormalizedIdsInModal.add(currentNormalized);
+                huboCambios = true;
+            }
+
+            if (huboCambios) {
+                setPreviewData(currentItems);
+                localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(currentItems));
+            }
+        };
+
+        sincronizarFotosEntrantes();
+    }
+}, [results]);
     // --- HELPER: GUARDAR ESTADO EN EL HISTORIAL ANTES DE CAMBIOS ---
     const saveToHistory = (currentState) => {
         // Guardamos una copia profunda del estado actual antes de modificarlo

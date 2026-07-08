@@ -4,6 +4,7 @@ import { saveAs } from 'file-saver';
 import * as XLSX from 'xlsx';
 import ReportFiller from './ReportFiller';
 import AccessGatekeeper from './AccessGatekeeper'; 
+import ReportSystemsManager from './ReportSystemsManager';
 import '../styles/ScannerTerminal.css';
 
 // IMPORTACIÓN: Asegúrate de que el logo esté en la ruta correcta.
@@ -24,6 +25,7 @@ const ScannerTerminal = () => {
   const [errors, setErrors] = useState([]);
   const [dateStamp, setDateStamp] = useState("");
   const [stampingFiles, setStampingFiles] = useState([]);
+const [lotePendiente, setLotePendiente] = useState(null);
 
   // --- EFECTOS ---
   useEffect(() => {
@@ -253,92 +255,107 @@ const ScannerTerminal = () => {
     return detectedText.trim();
   };
 
-  // --- LÓGICA REINCORPORADA Y OPTIMIZADA CON REINTENTOS + CONCURRENCIA ---
-  const processImages = async (event) => {
-    const files = Array.from(event.target.files).filter(f => f.type.startsWith('image/'));
-    if (files.length === 0) return;
+  const asignarLoteASistema = (sistemaElegido) => {
+    if (!lotePendiente) return;
+    const loteConSistema = lotePendiente.map(foto => ({ ...foto, sistemaAsignado: sistemaElegido }));
+    setResults(prev => [...prev, ...loteConSistema]);
+    setLotePendiente(null);
+  };
 
-    setLoading(true);
-    setResults([]);
-    setErrors([]);
-    setProgress({ current: 0, total: files.length });
+    // --- LÓGICA REINCORPORADA Y OPTIMIZADA CON REINTENTOS + CONCURRENCIA ---
+const processImages = async (event) => {
+  const files = Array.from(event.target.files).filter(f => f.type.startsWith('image/'));
+  if (files.length === 0) return;
 
-    const currentResults = [];
-    const currentErrors = [];
-    let completedCount = 0;
+  setLoading(true);
+  // Importante: No limpiamos setResults([]) aquí para poder acumular cargas sucesivas
+  setErrors([]);
+  setProgress({ current: 0, total: files.length });
 
-    const CONCURRENCY_LIMIT = 6; // Procesamiento en ráfagas de 6 imágenes en simultáneo
-    const MAX_RETRIES = 3;       // Intentos máximos por imagen si falla la red o cuota
+  const currentResults = [];
+  const currentErrors = [];
+  let completedCount = 0;
 
-    // Trabajamos con una copia indexada de archivos para coordinar el paralelismo
-    const pool = files.map((file, index) => ({ file, index }));
+  const CONCURRENCY_LIMIT = 6; // Procesamiento en ráfagas de 6 imágenes en simultáneo
+  const MAX_RETRIES = 3;       // Intentos máximos por imagen si falla la red o cuota
 
-    const worker = async () => {
-      while (pool.length > 0) {
-        const task = pool.shift();
-        if (!task) break;
+  // Trabajamos con una copia indexada de archivos para coordinar el paralelismo
+  const pool = files.map((file, index) => ({ file, index }));
 
-        const { file } = task;
-        const thumbUrl = URL.createObjectURL(file);
-        let currentDelay = 3000; // Iniciamos con 3 segundos de espera exponencial en fallos
-        let success = false;
+  const worker = async () => {
+    while (pool.length > 0) {
+      const task = pool.shift();
+      if (!task) break;
 
-        for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-          try {
-            // 1. Compresión local
-            const compressedBlob = await compressImage(file);
-            
-            // 2. Análisis con la función segura en la nube (Netlify)
-            const detectedId = await analyzeWithGemini(compressedBlob);
-            const finalId = detectedId.toUpperCase().trim(); 
-            const masterInfo = queryMaster(finalId); 
-                        
-            currentResults.push({
-              id: finalId, 
-              fileName: file.name,
-              originalFile: file,
-              thumb: thumbUrl,
-              isFound: !!masterInfo,
-              masterInfo: masterInfo || { ID: finalId, DISPOSITIVO: "N/A", UBICACION: "No encontrado en Base de Datos" }
+      const { file } = task;
+      const thumbUrl = URL.createObjectURL(file);
+      let currentDelay = 3000; // Iniciamos con 3 segundos de espera exponencial en fallos
+      let success = false;
+
+      for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        try {
+          // 1. Compresión local
+          const compressedBlob = await compressImage(file);
+          
+          // 2. Análisis con la función segura en la nube (Netlify)
+          const detectedId = await analyzeWithGemini(compressedBlob);
+          const finalId = detectedId.toUpperCase().trim(); 
+          const masterInfo = queryMaster(finalId); 
+                      
+          // Incorporamos los datos al array local temporal del lote
+          currentResults.push({
+            id: finalId, 
+            fileName: file.name,
+            originalFile: file,
+            thumb: thumbUrl,
+            isFound: !!masterInfo,
+            masterInfo: masterInfo || { ID: finalId, DISPOSITIVO: "N/A", UBICACION: "No encontrado en Base de Datos" }
+            // No le ponemos sistemaAsignado aún, se queda en el limbo
+          });
+          
+          success = true;
+          break; // Salimos exitosamente del bucle de reintentos para esta foto
+
+        } catch (err) {
+          console.warn(`⚠️ [Intento ${attempt}/${MAX_RETRIES}] Falló la foto ${file.name}: ${err.message}`);
+          
+          if (attempt < MAX_RETRIES) {
+            // Espera exponencial antes del siguiente reintento
+            await new Promise(resolve => setTimeout(resolve, currentDelay));
+            currentDelay *= 2; // Duplica el tiempo (3s -> 6s)
+          } else {
+            // Si agotó los 3 intentos, la mandamos definitivamente a fallidos
+            currentErrors.push({ 
+              fileName: file.name, 
+              reason: err.message || "Agotó los intentos de conexión.", 
+              thumb: thumbUrl 
             });
-            
-            // Actualización de resultados en tiempo real
-            setResults([...currentResults]);
-            success = true;
-            break; // Salimos exitosamente del bucle de reintentos para esta foto
-
-          } catch (err) {
-            console.warn(`⚠️ [Intento ${attempt}/${MAX_RETRIES}] Falló la foto ${file.name}: ${err.message}`);
-            
-            if (attempt < MAX_RETRIES) {
-              // Espera exponencial antes del siguiente reintento
-              await new Promise(resolve => setTimeout(resolve, currentDelay));
-              currentDelay *= 2; // Duplica el tiempo (3s -> 6s)
-            } else {
-              // Si agotó los 3 intentos, la mandamos definitivamente a fallidos
-              currentErrors.push({ 
-                fileName: file.name, 
-                reason: err.message || "Agotó los intentos de conexión.", 
-                thumb: thumbUrl 
-              });
-              setErrors([...currentErrors]);
-            }
+            setErrors([...currentErrors]);
           }
         }
-
-        completedCount++;
-        setProgress(prev => ({ ...prev, current: completedCount }));
       }
-    };
 
-    // Lanzamos las funciones de procesamiento en paralelo limitado
-    const workers = Array(Math.min(CONCURRENCY_LIMIT, pool.length))
-      .fill(null)
-      .map(() => worker());
-
-    await Promise.all(workers);
-    setLoading(false);
+      completedCount++;
+      setProgress(prev => ({ ...prev, current: completedCount }));
+    }
   };
+
+  // Lanzamos las funciones de procesamiento en paralelo limitado
+  const workers = Array(Math.min(CONCURRENCY_LIMIT, pool.length))
+    .fill(null)
+    .map(() => worker());
+
+  // Esperamos a que todas las ráfagas concurrentes terminen
+  await Promise.all(workers);
+  
+  // ✅ INTEGRACIÓN DEL CAMBIO: 
+  // Cuando termine el Promise.all, el lote analizado se guarda completo en espera de tu elección
+  if (currentResults.length > 0) {
+    setLotePendiente(currentResults); 
+  }
+
+  setLoading(false);
+};
 
   const applyWatermark = (file, dateStr) => {
     return new Promise((resolve) => {
@@ -443,33 +460,36 @@ const ScannerTerminal = () => {
     saveAs(content, "Fotos_FADS_Organizadas.zip");
   };
 
-  return (
-    <>
-      {!isAuthenticated && <AccessGatekeeper onAccessGranted={handleAccessGranted} />}
+ return (
+  <>
+    {!isAuthenticated && <AccessGatekeeper onAccessGranted={handleAccessGranted} />}
 
-      <div className={`terminal-container ${!isAuthenticated ? 'app-blurred' : ''}`}>
-        <div className="main-card">
-          <div className="header-blue">
-            IDs Analyzer 
-            <span style={{ fontSize: '12px', fontWeight: '500', color: '#fff', marginLeft: '12px', background: accessMode === 'full' ? '#22c55e' : '#eab308', padding: '2px 5px', borderRadius: '4px' }}>
-              {accessMode === 'full' ? '⚡ Acceso Total' : 'Core 🕓 Watermark & Date'}
-            </span>
-            {accessMode === 'full' && (
-              <span style={{ fontSize: '14px', fontWeight: '500', color: dbReady ? '#22c55e' : '#64748b', marginLeft: '10px' }}>
-                {dbReady ? '● Online' : '○ Loading DB...'}
-              </span>
-            )}
-          </div>
+    <div className={`terminal-container ${!isAuthenticated ? 'app-blurred' : ''}`}>
+      <div className="main-card">
+        <div className="header-blue">
+          IDs Analyzer 
+          <span style={{fontSize: '11px', fontWeight: '400', color: '#fff', marginLeft: '10px', background: accessMode === 'full' ? '#22c55e' : '#eab308', padding: '8px 8px', borderRadius: '25px' }}>
+            {accessMode === 'full' ? 'Acceso Total 🟢' : 'Core 🕓 Watermark & Date'}
+          </span>
+        </div>
 
-          <div className="action-bar" style={{ display: 'flex', gap: '15px', flexWrap: 'wrap', marginBottom: '25px' }}>
+        {/* BARRA DE ACCIONES PRINCIPAL CONTENEDORA */}
+        <div className="action-bar" style={{ display: 'flex', flexDirection: 'column', gap: '15px', marginBottom: '25px' }}>
+          
+          {/* FILA 1: CARGAR CARPETA Y MARCA DE AGUA */}
+          <div style={{ display: 'flex', gap: '15px', alignItems: 'stretch', flexWrap: 'wrap' }}>
             <input type="file" webkitdirectory="" directory="" multiple onChange={processImages} id="file-input" hidden />
             <button 
               className="btn-platform" 
               onClick={() => document.getElementById('file-input').click()} 
               disabled={loading || !dbReady || accessMode !== 'full'}
-              style={{ opacity: accessMode === 'full' ? 1 : 0.4, cursor: accessMode === 'full' ? 'pointer' : 'not-allowed' }}
+              style={{ 
+                opacity: accessMode === 'full' ? 1 : 0.4, 
+                cursor: accessMode === 'full' ? 'pointer' : 'not-allowed',
+                padding: '8px 18px'
+              }}
             >
-              📁 Analizar carpeta
+              📁 Cargar carpeta
             </button>
 
             {/* ZONA DE MARCA DE AGUA */}
@@ -478,7 +498,7 @@ const ScannerTerminal = () => {
               onClick={() => document.getElementById('stamp-input').click()}
               onDragOver={(e) => e.preventDefault()}
               onDrop={handleWatermarkDrop}
-              style={{ cursor: 'pointer', position: 'relative' }}
+              style={{ cursor: 'pointer', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '6px 20px' }}
             >
               <input 
                 type="file" 
@@ -491,13 +511,13 @@ const ScannerTerminal = () => {
                 hidden 
               />
               {stampingFiles.length === 0 ? (
-                <div>
-                  <p style={{ margin: 0, fontSize: '11px', fontWeight: '800', color: '#3b82f6' }}>🕓 WATERMARK & DATE</p>
-                  <p style={{ margin: 0, fontSize: '10px', color: '#64748b' }}>Click o arrastra las fotos aquí</p>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <p style={{ margin: 0, fontSize: '11px', fontWeight: '800', color: '#3b82f6' }}>🕓 LOGO & FECHA</p>
+                  <p style={{ margin: 0, fontSize: '11px', color: '#64748b' }}>• Click o arrastra las fotos aquí</p>
                 </div>
               ) : (
-                <div onClick={(e) => e.stopPropagation()}>
-                  <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', margin: '0 0 5px 0' }}>
+                <div onClick={(e) => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <p style={{ margin: 0, fontSize: '11px', color: '#10b981', fontWeight: 'bold' }}>✅ {stampingFiles.length} photos ready</p>
                     <button 
                       onClick={() => { setStampingFiles([]); setDateStamp(""); }} 
@@ -507,180 +527,229 @@ const ScannerTerminal = () => {
                       ✕
                     </button>
                   </div>
-                  <div style={{ display: 'flex', gap: '5px', justifyContent: 'center', alignItems: 'center' }}>
-                    <input type="date" value={dateStamp} onChange={(e) => setDateStamp(e.target.value)} style={{ fontSize: '10px', border: '1px solid #ddd', borderRadius: '4px' }} />
-                    <button className="btn-platform" onClick={handleGenerateStamps} disabled={!dateStamp || loading} style={{ padding: '4px 12px', fontSize: '10px', background: '#10b981' }}>Stamp</button>
+                  <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
+                    <input type="date" value={dateStamp} onChange={(e) => setDateStamp(e.target.value)} style={{ fontSize: '11px', border: '1px solid #ddd', borderRadius: '4px', padding: '2px 4px' }} />
+                    <button className="btn-platform" onClick={handleGenerateStamps} disabled={!dateStamp || loading} style={{ padding: '4px 10px', fontSize: '11px', background: '#10b981' }}>Stamp</button>
                   </div>
                 </div>
               )}
             </div>
+          </div>
 
+          {/* FILA 2: REPORTES Y DESCARGAS (POR DEBAJO) */}
+          <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', borderTop: '1px solid rgba(0,0,0,0.05)', paddingTop: '12px' }}>
+            
+            {/* 📥 AQUÍ QUEDA INTEGRADO EL MANEJADOR CON SUS PROPS DE CONTROL */}
             {accessMode === 'full' && (
-              <div className="action-buttons-container" style={{ display: 'flex', gap: '10px' }}>
-                <ReportFiller results={results} type="Informe Otrosí" templatePath="/Informe_mto_otrosi_fads.docx" className="btn-platform" />
-              </div>
+              <ReportSystemsManager 
+                resultadosOCR={results} 
+                lotePendiente={lotePendiente}
+                asignarLoteASistema={asignarLoteASistema}
+              />
             )}
 
-              <button 
-                className="btn-platform" 
-                onClick={downloadExcel} 
-                disabled={loading || results.length === 0 || accessMode !== 'full'} 
+            <button 
+              className="btn-platform" 
+              onClick={downloadExcel} 
+              disabled={loading || results.length === 0 || accessMode !== 'full'} 
+              style={{ 
+                marginLeft: 'auto', 
+                background: '#fff', 
+                color: '#1e293b', 
+                border: '1px solid #e2e8f0', 
+                opacity: accessMode === 'full' ? 1 : 0.4,
+                display: 'flex',          
+                alignItems: 'center', 
+                gap: '1px',              
+                padding: '6px 14px',
+                fontSize: '13px'
+              }}
+            >
+              <img 
+                src={excelIcon}
+                alt="Excel Icon" 
                 style={{ 
-                  marginLeft: 'auto', 
-                  background: '#fff', 
-                  color: '#1e293b', 
-                  border: '1px solid #e2e8f0', 
-                  opacity: accessMode === 'full' ? 1 : 0.4,
-                  display: 'flex',          // Alinea la imagen y el texto perfectamente al centro
-                  alignItems: 'center', 
-                  gap: '8px',               // Separa el icono del texto "Excel"
-                  padding: '6px 15px' 
-                }}
-              >
-                <img 
-                  src={excelIcon}
-                  alt="Excel Icon" 
-                  style={{ 
-                    width: '20px', 
-                    height: '20px', 
-                    objectFit: 'contain' 
-                  }} 
-                />
-                Excel
-              </button>
+                  width: '16px', 
+                  height: '16px', 
+                  objectFit: 'contain' 
+                }} 
+              />
+              Excel
+            </button>
+            
             <button 
               className="btn-platform" 
               onClick={downloadZip} 
               disabled={loading || results.length === 0 || accessMode !== 'full'}
-              style={{ opacity: accessMode === 'full' ? 1 : 0.4 }}
+              style={{ opacity: accessMode === 'full' ? 1 : 0.4, padding: '6px 14px', fontSize: '13px' }}
             >
               📂 ZIP
             </button>
           </div>
 
-          {loading && (
-            <div className="progress-wrapper" style={{ marginBottom: '25px' }}>
-              <div className="progress-track"><div className="progress-fill" style={{ width: `${(progress.current/progress.total)*100}%` }}></div></div>
-              <div className="progress-text">Procesando: {progress.current}/{progress.total}</div>
-            </div>
-          )}
-
-          {accessMode === 'full' ? (
-            <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: '20px', position: 'relative' }}>
-              
-              {/* BOTÓN DE LIMPIEZA TOTAL */}
-              {(results.length > 0 || errors.length > 0) && (
-                <button
-                  onClick={clearAllAnalyzedData}
-                  disabled={loading}
-                  style={{
-                    position: 'absolute',
-                    top: '-12px',
-                    right: 'calc(40% + 10px)',
-                    background: '#fee2e2',
-                    color: '#ef4444',
-                    border: '1.5px solid #fca5a5',
-                    borderRadius: '10px',
-                    width: '38px',
-                    height: '38px',
-                    fontSize: '18px',
-                    fontWeight: 'bold',
-                    cursor: loading ? 'not-allowed' : 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    boxShadow: '0 4px 6px -1px rgba(239, 68, 68, 0.1)',
-                    zIndex: 10,
-                    transition: 'all 0.2s ease'
-                  }}
-                  title="Limpiar todas las fotos analizadas"
-                  onMouseEnter={(e) => { if(!loading) e.target.style.background = '#fecaca'; }}
-                  onMouseLeave={(e) => { if(!loading) e.target.style.background = '#fee2e2'; }}
-                >
-                  ✕
-                </button>
-              )}
-
-              {/* COLUMNA: DETECTADOS */}
-              <div className="column-section" style={{ background: '#fff', borderRadius: '16px', padding: '20px', border: '1px solid #e2e8f0' }}>
-                <h3 style={{ fontSize: '15px', fontWeight: '700', color: '#0f172a', marginBottom: '15px' }}>
-                  Dispositivos detectados ({results.length})
-                </h3>
-                <div style={{ maxHeight: '600px', overflowY: 'auto', paddingRight: '10px' }}>
-                  <table className="data-table">
-                    <thead><tr><th>Foto</th><th>ID Detectado</th><th>Ubicación</th></tr></thead>
-                    <tbody>
-                      {results.map((res, i) => (
-                        <tr key={i}>
-                          <td><img src={res.thumb} style={{ width: '55px', height: '55px', objectFit: 'cover', borderRadius: '10px', border: '1px solid #e2e8f0' }} alt="thumb" /></td>
-                          <td style={{ color: res.isFound ? '#1e293b' : '#e67e22', fontWeight: '700', fontSize: '13px' }}>{res.id}</td>
-                          <td>
-                            <div style={{ fontSize: '12px', fontWeight: '600', color: '#1e293b'}}>{res.masterInfo?.UBICACION}</div>
-                            <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>{res.masterInfo?.DISPOSITIVO}</div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              {/* COLUMNA: NO DETECTADOS CON PREVISUALIZACIÓN */}
-              <div className="column-section" style={{ background: '#fff', borderRadius: '16px', padding: '20px', border: '1px solid #e2e8f0' }}>
-                <h3 style={{ fontSize: '15px', fontWeight: '700', color: '#ef4444', marginBottom: '15px' }}>
-                  No detectados ({errors.length})
-                </h3>
-                <div style={{ maxHeight: '600px', overflowY: 'auto' }}>
-                  <table className="data-table">
-                    <thead>
-                      <tr>
-                        <th>Foto</th>
-                        <th>Archivo</th>
-                        <th>Motivo</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {errors.map((err, i) => (
-                        <tr key={i}>
-                          <td>
-                            {err.thumb ? (
-                              <img 
-                                src={err.thumb} 
-                                style={{ width: '55px', height: '55px', objectFit: 'cover', borderRadius: '10px', border: '1px solid #fee2e2' }} 
-                                alt="error thumb" 
-                              />
-                            ) : (
-                              <div style={{ width: '55px', height: '55px', borderRadius: '10px', background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px' }}>⚠️</div>
-                            )}
-                          </td>
-                          <td style={{ fontSize: '11px', color: '#475569', fontWeight: '500', maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {err.fileName}
-                          </td>
-                          <td style={{ fontSize: '11px', color: '#ef4444', fontWeight: '600' }}>
-                            {err.reason}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-            </div>
-          ) : (
-            <div style={{ textAlign: 'center', padding: '40px', border: '2px dashed #cbd5e1', borderRadius: '12px', background: '#f8fafc' }}>
-              <p style={{ fontSize: '14px', color: '#64748b', margin: 0, fontWeight: '500' }}>
-                🔒 El acceso para usar el analizador y generador de informes está restringido para tu perfil.
-              </p>
-              <p style={{ fontSize: '12px', color: '#94a3b8', marginTop: '5px' }}>
-                Usa la herramienta de marca de agua y fecha para procesar tus imágenes de inspección.
-              </p>
-            </div>
-          )}
         </div>
+
+        {loading && (
+          <div className="progress-wrapper" style={{ marginBottom: '25px' }}>
+            <div className="progress-track"><div className="progress-fill" style={{ width: `${(progress.current/progress.total)*100}%` }}></div></div>
+            <div className="progress-text">Procesando: {progress.current}/{progress.total}</div>
+          </div>
+        )}
+
+        {/* 🌟 BLOQUE DE ASIGNACIÓN FLOTANTE */}
+        {lotePendiente && (
+          <div style={{ 
+            background: '#f0f7ff', 
+            border: '1px dashed #3b82f6', 
+            borderRadius: '16px', 
+            padding: '14px 20px', 
+            marginBottom: '25px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '15px',
+            boxShadow: '0 4px 12px rgba(59, 130, 246, 0.08)'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{ fontSize: '13px', color: '#1e3a8a', fontWeight: '600' }}>
+                ¡{lotePendiente.length} fotos analizadas con éxito! Selecciona el sistema al que quieres agregarlas y continuar con tu registro.
+              </span>
+            </div>
+            
+            <button 
+              onClick={() => setLotePendiente(null)} 
+              style={{ 
+                background: 'rgba(239, 68, 68, 0.1)', 
+                border: 'none', 
+                color: '#ef4444', 
+                cursor: 'pointer', 
+                fontSize: '11px', 
+                fontWeight: '700',
+                padding: '6px 12px',
+                borderRadius: '50px',
+                transition: 'all 0.2s ease'
+              }}
+              onMouseEnter={(e) => e.target.style.background = 'rgba(239, 68, 68, 0.2)'}
+              onMouseLeave={(e) => e.target.style.background = 'rgba(239, 68, 68, 0.1)'}
+            >
+              Cancelar lote
+            </button>
+          </div>
+        )}
+
+        {accessMode === 'full' ? (
+          <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr', gap: '20px', position: 'relative' }}>
+            
+            {/* BOTÓN DE LIMPIEZA TOTAL */}
+            {(results.length > 0 || errors.length > 0) && (
+              <button
+                onClick={clearAllAnalyzedData}
+                disabled={loading}
+                style={{
+                  position: 'absolute',
+                  top: '-12px',
+                  right: 'calc(40% + 10px)',
+                  background: '#fee2e2',
+                  color: '#ef4444',
+                  border: '1px solid #fca5a5',
+                  borderRadius: '10px',
+                  width: '38px',
+                  height: '38px',
+                  fontSize: '18px',
+                  fontWeight: 'bold',
+                  cursor: loading ? 'not-allowed' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  boxShadow: '0 4px 6px -1px rgba(239, 68, 68, 0.1)',
+                  zIndex: 10,
+                  transition: 'all 0.2s ease'
+                }}
+                title="Limpiar todas las fotos analizadas"
+              >
+                ✕
+              </button>
+            )}
+
+            {/* COLUMNA: DETECTADOS */}
+            <div className="column-section" style={{ background: '#fff', borderRadius: '16px', padding: '20px', border: '1px solid #e2e8f0' }}>
+              <h3 style={{ fontSize: '15px', fontWeight: '700', color: '#0f172a', marginBottom: '15px' }}>
+                Dispositivos detectados ({results.length})
+              </h3>
+              <div style={{ maxHeight: '600px', overflowY: 'auto', paddingRight: '10px' }}>
+                <table className="data-table">
+                  <thead><tr><th>Foto</th><th>ID Detectado</th><th>Ubicación</th></tr></thead>
+                  <tbody>
+                    {results.map((res, i) => (
+                      <tr key={i}>
+                        <td><img src={res.thumb} style={{ width: '55px', height: '55px', objectFit: 'cover', borderRadius: '10px', border: '1px solid #e2e8f0' }} alt="thumb" /></td>
+                        <td style={{ color: res.isFound ? '#1e293b' : '#e67e22', fontWeight: '700', fontSize: '13px' }}>{res.id}</td>
+                        <td>
+                          <div style={{ fontSize: '12px', fontWeight: '600', color: '#1e293b'}}>{res.masterInfo?.UBICACION}</div>
+                          <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>{res.masterInfo?.DISPOSITIVO}</div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* COLUMNA: NO DETECTADOS CON PREVISUALIZACIÓN */}
+            <div className="column-section" style={{ background: '#fff', borderRadius: '16px', padding: '20px', border: '1px solid #e2e8f0' }}>
+              <h3 style={{ fontSize: '15px', fontWeight: '700', color: '#ef4444', marginBottom: '15px' }}>
+                No detectados ({errors.length})
+              </h3>
+              <div style={{ maxHeight: '600px', overflowY: 'auto' }}>
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Foto</th>
+                      <th>Archivo</th>
+                      <th>Motivo</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {errors.map((err, i) => (
+                      <tr key={i}>
+                        <td>
+                          {err.thumb ? (
+                            <img 
+                              src={err.thumb} 
+                              style={{ width: '55px', height: '55px', objectFit: 'cover', borderRadius: '10px', border: '1px solid #fee2e2' }} 
+                              alt="error thumb" 
+                            />
+                          ) : (
+                            <div style={{ width: '55px', height: '55px', borderRadius: '10px', background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px' }}>⚠️</div>
+                          )}
+                        </td>
+                        <td style={{ fontSize: '11px', color: '#475569', fontWeight: '500', maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {err.fileName}
+                        </td>
+                        <td style={{ fontSize: '11px', color: '#ef4444', fontWeight: '600' }}>
+                          {err.reason}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+          </div>
+        ) : (
+          <div style={{ textAlign: 'center', padding: '40px', border: '2px dashed #cbd5e1', borderRadius: '12px', background: '#f8fafc' }}>
+            <p style={{ fontSize: '14px', color: '#64748b', margin: 0, fontWeight: '500' }}>
+              🔒 El acceso para usar el analizador y generador de informes está restringido para tu perfil.
+            </p>
+            <p style={{ fontSize: '12px', color: '#94a3b8', marginTop: '5px' }}>
+              Usa la herramienta de marca de agua y fecha para procesar tus imágenes de inspección.
+            </p>
+          </div>
+        )}
       </div>
-    </>
-  );
-};
+    </div>
+  </>
+);}
 
 export default ScannerTerminal;

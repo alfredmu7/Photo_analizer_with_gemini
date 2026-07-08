@@ -1,0 +1,153 @@
+/* Contenedor del componente */
+.systems-manager-container {
+    margin-top: 15px;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    font-size: 13px;
+}
+
+/* Fila de botones circulares */
+.systems-tabs-circle-bar {
+    display: flex;
+    gap: 14px;
+    align-items: center;
+    margin-bottom: 5px;
+}
+
+/* Estructura circular base */
+.tab-circle {
+    position: relative;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.8);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.02);
+}
+
+.tab-circle:hover {
+    transform: translateY(-2px);
+    background: #ffffff;
+    box-shadow: 0 6px 15px rgba(0, 0, 0, 0.06);
+}
+
+/* Iconos de emoji escalados */
+.circle-icon {
+    font-size: 18px;
+}
+
+/* Burbuja de Conteo Superior Derecha */
+.circle-badge {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    background: #1e293b;
+    color: white;
+    font-size: 10px;
+    font-weight: 800;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid white;
+    font-family: 'Plus Jakarta Sans', sans-serif;
+}
+
+/* Estados Activos Circulares */
+.circle-active-sacs {
+    background: #10b981 !important;
+    border-color: #10b981 !important;
+    box-shadow: 0 4px 14px rgba(22, 163, 74, 0.4) !important;
+}
+
+.circle-active-fads {
+    background: #ff8645 !important;
+    border-color: #ff8645 !important;
+    box-shadow: 0 4px 14px rgba(234, 88, 12, 0.4) !important;
+}
+
+.circle-active-cctv {
+    background: #3b82f6 !important;
+    border-color: #3b82f6  !important;
+    box-shadow: 0 4px 14px rgba(59, 130, 246, 0.4) !important;
+}
+
+/* Panel inferior donde se renderiza el ReportFiller final */
+.systems-action-panel {
+    display: flex;
+    align-items: center;
+    animation: fadeIn 0.2s ease-in-out;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(2px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Formulario en línea */
+.auth-inline-form {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    animation: fadeIn 0.2s ease-in-out;
+}
+
+/* El input estilo Glass / Cápsula */
+.auth-input {
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    padding: 10px 18px;
+    font-size: 13px;
+    border-radius: 50px;
+    border: 1px solid #cbd5e1;
+    background: rgba(255, 255, 255, 0.8);
+    outline: none;
+    color: var(--text-main);
+    transition: all 0.2s ease;
+    width: 160px;
+}
+
+.auth-input:focus {
+    border-color: var(--primary-blue);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+
+/* Error de Clave */
+.auth-input-error {
+    border-color: #ef4444 !important;
+    background: #fef2f2 !important;
+    animation: shake 0.2s ease-in-out 2;
+}
+
+/* Botón enviar credencial */
+.btn-auth-submit {
+    font-family: 'Plus Jakarta Sans', sans-serif;
+    background: #1e293b;
+    color: white;
+    border: none;
+    padding: 10px 16px;
+    border-radius: 50px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-auth-submit:hover {
+    background: #0f172a;
+    transform: translateY(-1px);
+}
+
+/* Animación de error (Sacudida) */
+@keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-4px); }
+    75% { transform: translateX(4px); }
+}
