@@ -612,7 +612,7 @@ const processImages = async (event) => {
           }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <span style={{ fontSize: '13px', color: '#1e3a8a', fontWeight: '600' }}>
-                ¡{lotePendiente.length} fotos analizadas con éxito! Selecciona el sistema al que quieres agregarlas y continuar con tu registro.
+                ¡{lotePendiente.length} fotos analizadas con éxito! Selecciona el sistema al que deseas que se agregue.
               </span>
             </div>
             
@@ -632,7 +632,7 @@ const processImages = async (event) => {
               onMouseEnter={(e) => e.target.style.background = 'rgba(239, 68, 68, 0.2)'}
               onMouseLeave={(e) => e.target.style.background = 'rgba(239, 68, 68, 0.1)'}
             >
-              Cancelar lote
+              Cancelar registro
             </button>
           </div>
         )}

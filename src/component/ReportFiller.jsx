@@ -655,7 +655,7 @@ useEffect(() => {
                                 })
                             ) : (
                                 <div style={{ textAlign: 'center', padding: '30px', color: '#64748b', fontSize: '14px' }}>
-                                     Oop! No veo un ID {searchTerm}
+                                     Oops! No veo un ID {searchTerm}
                                 </div>
                             )}
                         </div>

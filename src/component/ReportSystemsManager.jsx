@@ -24,7 +24,7 @@ const ReportSystemsManager = ({ resultadosOCR, lotePendiente, asignarLoteASistem
         CCTV: 'cctv123'
     };
 
-    // 1. FILTRADO AUTOMÁTICO POR NOMENCLATURA (Mantiene tu lógica actual)
+    // 1. FILTRADO AUTOMÁTICO POR NOMENCLATURA
     const filtrarPorNomenclatura = (sistema) => {
         if (!resultadosOCR || resultadosOCR.length === 0) return [];
         switch (sistema) {
@@ -40,41 +40,76 @@ const ReportSystemsManager = ({ resultadosOCR, lotePendiente, asignarLoteASistem
     };
 
     // 2. LOGICA DE CONTROL TOTAL
-const obtenerResultadosParaSistema = (sistema) => {
-    // 1. Conseguimos las fotos que entran automáticamente por su letra (F, M, A, CK, C)
-    const automaticos = filtrarPorNomenclatura(sistema);
-    
-    // 2. Conseguimos las fotos que el usuario inyectó manualmente a través del botón de lote
-    const porLote = resultadosOCR.filter(res => res.sistemaAsignado === sistema);
-    
-    // 3. Unimos ambas listas en un solo array sin duplicar fotos (usando el ID único o el objeto)
-    const todasLasFotos = [...porLote];
-    
-    automaticos.forEach(autoFoto => {
-        // Si la foto automática no está ya en la lista por lote, la agregamos
-        if (!todasLasFotos.some(f => f.id === autoFoto.id)) {
-            todasLasFotos.push(autoFoto);
+    const obtenerResultadosParaSistema = (sistema) => {
+        const automaticos = filtrarPorNomenclatura(sistema);
+        const porLote = resultadosOCR.filter(res => res.sistemaAsignado === sistema);
+        const todasLasFotos = [...porLote];
+        
+        automaticos.forEach(autoFoto => {
+            if (!todasLasFotos.some(f => f.id === autoFoto.id)) {
+                todasLasFotos.push(autoFoto);
+            }
+        });
+
+        return todasLasFotos;
+    };
+
+    // VERIFICAR CONTRASEÑA
+    const handleVerifyPassword = (e, sistema) => {
+        e.preventDefault();
+        if (passwordInput === CREDENTIALS[sistema]) {
+            setUnlockedSystems(prev => ({ ...prev, [sistema]: true }));
+            setAuthError(false);
+            setPasswordInput('');
+        } else {
+            setAuthError(true);
         }
-    });
+    };
 
-    return todasLasFotos;
-};
-
-// 🌟 FUNCIÓN QUE TE HACE FALTA PARA DETENER LA RECARGA DE LA PÁGINA
-const handleVerifyPassword = (e, sistema) => {
-    e.preventDefault(); // 🛑 Detiene el comportamiento de recarga nativo del formulario
-
-    if (passwordInput === CREDENTIALS[sistema]) {
+    // 🔒 Cierra el candado y bloquea el sistema inmediatamente
+    const handleLockSystem = (e, sistema) => {
+        e.stopPropagation(); // 🛑 Evita que se dispare el evento del botón circular de abajo
         setUnlockedSystems(prev => ({
             ...prev,
-            [sistema]: true
+            [sistema]: false
         }));
         setAuthError(false);
         setPasswordInput('');
-    } else {
-        setAuthError(true);
-    }
-};
+    };
+
+    // 🔑 Solicita clave de seguridad antes de inyectar el Grupo de Ids pendientes
+    const handleAsignarLoteSeguro = (sistema) => {
+        const confirmPassword = prompt(`Por seguridad, introduce la clave de ${sistema} para agregar este grupo de Ids:`);
+        if (confirmPassword === null) return;
+
+        if (confirmPassword === CREDENTIALS[sistema]) {
+            asignarLoteASistema(sistema);
+            alert("¡Ids asignados con éxito!");
+        } else {
+            alert("❌ Contraseña incorrecta. Acción cancelada.");
+        }
+    };
+
+    // 🌟 Ajustado a la IZQUIERDA para no chocar con el badge de registros
+    const floatingLockStyle = {
+        position: 'absolute',
+        top: '-6px',
+        left: '-6px', // 👈 Cambiado de right a left
+        background: '#ef4444',
+        color: '#fff',
+        border: '2px solid #fff',
+        borderRadius: '50%',
+        width: '22px',
+        height: '22px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontSize: '11px',
+        cursor: 'pointer',
+        boxShadow: '0 2px 5px rgba(0,0,0,0.2)',
+        zIndex: '10',
+        transition: 'transform 0.1s ease'
+    };
 
     return (
         <div className="systems-manager-container">
@@ -85,41 +120,87 @@ const handleVerifyPassword = (e, sistema) => {
 
             {/* BOTONES CIRCULARES (TABS) */}
             <div className="systems-tabs-circle-bar">
-                <button 
-                    type="button"
-                    className={`tab-circle ${activeSystem === 'SACS' ? 'circle-active-sacs' : ''}`}
-                    onClick={() => { setActiveSystem('SACS'); setAuthError(false); setPasswordInput(''); }}
-                    title="Control de Acceso (SACS)"
-                >
-                    <span className="circle-icon">{unlockedSystems.SACS ? '🔓' : '🔒'}</span>
-                    {obtenerResultadosParaSistema('SACS').length > 0 && (
-                        <span className="circle-badge">{obtenerResultadosParaSistema('SACS').length}</span>
-                    )}
-                </button>
                 
-                <button 
-                    type="button"
-                    className={`tab-circle ${activeSystem === 'FADS' ? 'circle-active-fads' : ''}`}
-                    onClick={() => { setActiveSystem('FADS'); setAuthError(false); setPasswordInput(''); }}
-                    title="Detección de Incendios (FADS)"
-                >
-                    <span className="circle-icon">{unlockedSystems.FADS ? '🔓' : '🔥'}</span>
-                    {obtenerResultadosParaSistema('FADS').length > 0 && (
-                        <span className="circle-badge">{obtenerResultadosParaSistema('FADS').length}</span>
+                {/* CONTENEDOR SACS */}
+                <div style={{ position: 'relative', display: 'inline-block' }}>
+                    {unlockedSystems.SACS && (
+                        <button 
+                            type="button"
+                            style={floatingLockStyle}
+                            onClick={(e) => handleLockSystem(e, 'SACS')}
+                            title="Bloquear acceso a SACS"
+                            onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.1)'}
+                            onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+                        >
+                            🔒
+                        </button>
                     )}
-                </button>
+                    <button 
+                        type="button"
+                        className={`tab-circle ${activeSystem === 'SACS' ? 'circle-active-sacs' : ''}`}
+                        onClick={() => { setActiveSystem('SACS'); setAuthError(false); setPasswordInput(''); }}
+                        title="Control de Acceso (SACS)"
+                    >
+                        <span className="circle-icon">{unlockedSystems.SACS ? '🔓' : '🔒'}</span>
+                        {obtenerResultadosParaSistema('SACS').length > 0 && (
+                            <span className="circle-badge">{obtenerResultadosParaSistema('SACS').length}</span>
+                        )}
+                    </button>
+                </div>
                 
-                <button 
-                    type="button"
-                    className={`tab-circle ${activeSystem === 'CCTV' ? 'circle-active-cctv' : ''}`}
-                    onClick={() => { setActiveSystem('CCTV'); setAuthError(false); setPasswordInput(''); }}
-                    title="Circuito Cerrado de TV (CCTV)"
-                >
-                    <span className="circle-icon">{unlockedSystems.CCTV ? '🔓' : '📷'}</span>
-                    {obtenerResultadosParaSistema('CCTV').length > 0 && (
-                        <span className="circle-badge">{obtenerResultadosParaSistema('CCTV').length}</span>
+                {/* CONTENEDOR FADS */}
+                <div style={{ position: 'relative', display: 'inline-block' }}>
+                    {unlockedSystems.FADS && (
+                        <button 
+                            type="button"
+                            style={floatingLockStyle}
+                            onClick={(e) => handleLockSystem(e, 'FADS')}
+                            title="Bloquear acceso a FADS"
+                            onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.1)'}
+                            onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+                        >
+                            🔒
+                        </button>
                     )}
-                </button>
+                    <button 
+                        type="button"
+                        className={`tab-circle ${activeSystem === 'FADS' ? 'circle-active-fads' : ''}`}
+                        onClick={() => { setActiveSystem('FADS'); setAuthError(false); setPasswordInput(''); }}
+                        title="Detección de Incendios (FADS)"
+                    >
+                        <span className="circle-icon">{unlockedSystems.FADS ? '🔓' : '🔥'}</span>
+                        {obtenerResultadosParaSistema('FADS').length > 0 && (
+                            <span className="circle-badge">{obtenerResultadosParaSistema('FADS').length}</span>
+                        )}
+                    </button>
+                </div>
+                
+                {/* CONTENEDOR CCTV */}
+                <div style={{ position: 'relative', display: 'inline-block' }}>
+                    {unlockedSystems.CCTV && (
+                        <button 
+                            type="button"
+                            style={floatingLockStyle}
+                            onClick={(e) => handleLockSystem(e, 'CCTV')}
+                            title="Bloquear acceso a CCTV"
+                            onMouseEnter={(e) => e.currentTarget.style.transform = 'scale(1.1)'}
+                            onMouseLeave={(e) => e.currentTarget.style.transform = 'scale(1)'}
+                        >
+                            🔒
+                        </button>
+                    )}
+                    <button 
+                        type="button"
+                        className={`tab-circle ${activeSystem === 'CCTV' ? 'circle-active-cctv' : ''}`}
+                        onClick={() => { setActiveSystem('CCTV'); setAuthError(false); setPasswordInput(''); }}
+                        title="Circuito Cerrado de TV (CCTV)"
+                    >
+                        <span className="circle-icon">{unlockedSystems.CCTV ? '🔓' : '📷'}</span>
+                        {obtenerResultadosParaSistema('CCTV').length > 0 && (
+                            <span className="circle-badge">{obtenerResultadosParaSistema('CCTV').length}</span>
+                        )}
+                    </button>
+                </div>
             </div>
             
             {/* PANEL DE ACCIÓN DINÁMICO */}
@@ -134,7 +215,7 @@ const handleVerifyPassword = (e, sistema) => {
                             </p>
                             <button 
                                 className="btn-platform" 
-                                onClick={() => asignarLoteASistema('SACS')}
+                                onClick={() => handleAsignarLoteSeguro('SACS')}
                                 style={{ background: '#22c55e', color: '#fff', width: '100%', justifyContent: 'center', padding: '10px' }}
                             >
                                 📥 Confirmar y agregar a SACS
@@ -153,13 +234,15 @@ const handleVerifyPassword = (e, sistema) => {
                             <button type="submit" className="btn-auth-submit">Entrar</button>
                         </form>
                     ) : (
-                        <ReportFiller 
-                            results={obtenerResultadosParaSistema('SACS')} 
-                            type="Mantenimiento"
-                            system="SACS"
-                            templatePath="/Informe_mto_otrosi_fads.docx"
-                            className="btn-platform"
-                        />
+                        <div style={{ width: '100%' }}>
+                            <ReportFiller 
+                                results={obtenerResultadosParaSistema('SACS')} 
+                                type="Mantenimiento"
+                                system="SACS"
+                                templatePath="/Informe_mto_otrosi_fads.docx"
+                                className="btn-platform"
+                            />
+                        </div>
                     )
                 )}
 
@@ -172,7 +255,7 @@ const handleVerifyPassword = (e, sistema) => {
                             </p>
                             <button 
                                 className="btn-platform" 
-                                onClick={() => asignarLoteASistema('FADS')}
+                                onClick={() => handleAsignarLoteSeguro('FADS')}
                                 style={{ background: '#ff8645', color: '#fff', width: '100%', justifyContent: 'center', padding: '10px' }}
                             >
                                 📥 Confirmar y agregar a FADS
@@ -191,13 +274,15 @@ const handleVerifyPassword = (e, sistema) => {
                             <button type="submit" className="btn-auth-submit">Entrar</button>
                         </form>
                     ) : (
-                        <ReportFiller 
-                            results={obtenerResultadosParaSistema('FADS')} 
-                            type="Mantenimiento"
-                            system="FADS"
-                            templatePath="/Informe_mto_otrosi_fads.docx"
-                            className="btn-platform"
-                        />
+                        <div style={{ width: '100%' }}>
+                            <ReportFiller 
+                                results={obtenerResultadosParaSistema('FADS')} 
+                                type="Mantenimiento"
+                                system="FADS"
+                                templatePath="/Informe_mto_otrosi_fads.docx"
+                                className="btn-platform"
+                            />
+                        </div>
                     )
                 )}
 
@@ -210,7 +295,7 @@ const handleVerifyPassword = (e, sistema) => {
                             </p>
                             <button 
                                 className="btn-platform" 
-                                onClick={() => asignarLoteASistema('CCTV')}
+                                onClick={() => handleAsignarLoteSeguro('CCTV')}
                                 style={{ background: '#3b82f6 ', color: '#fff', width: '100%', justifyContent: 'center', padding: '10px' }}
                             >
                                 📥 Confirmar y agregar a CCTV
@@ -229,13 +314,15 @@ const handleVerifyPassword = (e, sistema) => {
                             <button type="submit" className="btn-auth-submit">Entrar</button>
                         </form>
                     ) : (
-                        <ReportFiller 
-                            results={obtenerResultadosParaSistema('CCTV')} 
-                            type="Mantenimiento"
-                            system="CCTV"
-                            templatePath="/Informe_mto_otrosi_fads.docx"
-                            className="btn-platform"
-                        />
+                        <div style={{ width: '100%' }}>
+                            <ReportFiller 
+                                results={obtenerResultadosParaSistema('CCTV')} 
+                                type="Mantenimiento"
+                                system="CCTV"
+                                templatePath="/Informe_mto_otrosi_fads.docx"
+                                className="btn-platform"
+                            />
+                        </div>
                     )
                 )}
             </div>
