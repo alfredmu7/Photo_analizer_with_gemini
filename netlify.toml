@@ -1,14 +1,16 @@
 [build]
   command = "npm run build"
-  publish = "dist" # Si usas Vite es "dist". Si usas Create React App cámbialo a "build"
+  publish = "dist"
 
 [functions]
   directory = "netlify/functions"
+  # 🚀 ESTO ES LO QUE FALTA: Fuerza a Netlify a compilar bien las dependencias
+  node_bundle = "esbuild"
 
-# === AGREGAR ESTO PARA SOLUCIONAR EL ERROR DE CORS ===
+# === CONFIGURACIÓN DE CORS DEFINITIVA ===
 [[headers]]
   for = "/.netlify/functions/*"
   [headers.values]
     Access-Control-Allow-Origin = "*"
-    Access-Control-Allow-Headers = "Content-Type"
+    Access-Control-Allow-Headers = "Content-Type, Authorization"
     Access-Control-Allow-Methods = "POST, GET, OPTIONS"
