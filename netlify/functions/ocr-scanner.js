@@ -1,10 +1,9 @@
 // Archivo: netlify/functions/ocr-scanner.js
-import { GoogleGenAI } from "@google/genai"; 
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.VITE_GEMINI_API_KEY });
+const genAI = new GoogleGenerativeAI(process.env.VITE_GEMINI_API_KEY);
 
 export const handler = async (event, context) => {
-  // Manejo directo de CORS en el código
   const headers = {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Headers": "Content-Type, Authorization",
@@ -40,20 +39,20 @@ export const handler = async (event, context) => {
       };
     }
 
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash", 
-      contents: [
-        {
-          inlineData: {
-            mimeType: "image/jpeg",
-            data: base64Image
-          }
-        },
-        "Extrae únicamente el código de identificación o ID de dispositivo industrial visible en la etiqueta blanca con letras negras (ejemplo: P11L2). No agregues texto adicional, saludos ni explicaciones, solo devuelve el ID en texto limpio."
-      ],
-    });
+    // Usamos el SDK clásico e infalible en Netlify
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    
+    const response = await model.generateContent([
+      {
+        inlineData: {
+          mimeType: "image/jpeg",
+          data: base64Image
+        }
+      },
+      "Extrae únicamente el código de identificación o ID de dispositivo industrial visible en la etiqueta blanca con letras negras (ejemplo: P11L2). No agregues texto adicional, saludos ni explicaciones, solo devuelve el ID en texto limpio."
+    ]);
 
-    const textoDetectadoIA = response.text ? response.text.trim() : "ERROR_NO_CANDIDATE";
+    const textoDetectadoIA = response.response.text() ? response.response.text().trim() : "ERROR_NO_CANDIDATE";
 
     return {
       statusCode: 200,
