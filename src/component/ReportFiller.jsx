@@ -7,7 +7,6 @@ import logoJCI from '../assets/logoJCIcompleto.png';
 import '../styles/ReportFiller.css'; 
 
 import wordIcon from '../assets/word.png';
-import restartIcon from '../assets/restart.png';
 import undo from '../assets/undo.png';
 
 const ReportFiller = ({ results, type, templatePath, className, system = 'GENERAL' }) => {
@@ -211,6 +210,7 @@ useEffect(() => {
     };
 
     // --- ELIMINAR ELEMENTO ---
+    // --- ELIMINAR ELEMENTO ---
     const handleRemoveItem = (idOriginal) => {
         saveToHistory(previewData); // Guardar historial antes de borrar
         
@@ -231,7 +231,6 @@ useEffect(() => {
             localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updated));
         }
     };
-
     // --- ENTRADA AL CONFIGURADOR ASÍNCRONO ---
     const openConfig = async () => {
         setSearchTerm(""); 
@@ -309,9 +308,7 @@ useEffect(() => {
         setShowModal(true);
     };
 
-    const handleRoleChange = (idOriginal, fotoIdx, nuevoRol) => {
-        saveToHistory(previewData); // Guardar historial antes de cambiar roles
-        
+   const handleRoleChange = (idOriginal, fotoIdx, nuevoRol) => {
         // INTERCEPTAR SI EL USUARIO SELECCIONA OMITIR
         if (nuevoRol === 'ninguno') {
             const nuevoId = window.prompt("¿Quieres modificar el Id de esta foto para unirla con otra?");
@@ -319,39 +316,49 @@ useEffect(() => {
             if (nuevoId && nuevoId.trim().toUpperCase() !== idOriginal.toUpperCase()) {
                 const targetId = nuevoId.trim().toUpperCase();
                 
+                // Guardamos el historial JUSTO AQUÍ, una vez confirmado que hay un cambio real
+                saveToHistory(previewData);
+
                 setPreviewData(prev => {
                     const sourceRow = prev.find(r => r.idOriginal === idOriginal);
                     if (!sourceRow) return prev;
 
-                    // Extraemos la foto a mudar y dejamos las demás en la fila origen
-                    const photoToMove = { ...sourceRow.fotos[fotoIdx], rol: 'antes' }; // Cambia a 'antes' por defecto en el nuevo grupo
+                    // Extraemos la foto a mudar y la configuramos como 'antes' por defecto en su nuevo destino
+                    const photoToMove = { ...sourceRow.fotos[fotoIdx], rol: 'antes' }; 
                     const updatedSourceFotos = sourceRow.fotos.filter((_, idx) => idx !== fotoIdx);
 
-                    // Buscamos si ya existe el grupo destino (ej: 'P16L1M056-T')
+                    // Buscamos si ya existe el grupo destino (por idSeleccionado o por idOriginal)
                     const targetRow = prev.find(r => 
                         r.idSeleccionado.toUpperCase() === targetId || 
                         r.idOriginal.toUpperCase() === targetId
                     );
 
                     let newState = prev.map(row => {
-                        // Si es el destino, le sumamos la foto fusionándola
+                        // Si es el bloque destino, le inyectamos la foto aplicando las reglas de combinación
                         if (targetRow && row.idOriginal === targetRow.idOriginal) {
                             const combinacionFotos = [...row.fotos];
                             if (!combinacionFotos.some(f => f.b64Data === photoToMove.b64Data)) {
                                 const tieneAntes = combinacionFotos.some(x => x.rol === 'antes');
-                                if (tieneAntes) photoToMove.rol = 'despues'; // Si ya hay un 'antes', la acomoda como 'después'
+                                const tieneDespues = combinacionFotos.some(x => x.rol === 'despues');
+                                
+                                // Si ya hay un 'antes', la acomoda como 'después'. Si ambos están llenos, se queda en 'ninguno'
+                                if (tieneAntes && !tieneDespues) {
+                                    photoToMove.rol = 'despues';
+                                } else if (tieneAntes && tieneDespues) {
+                                    photoToMove.rol = 'ninguno';
+                                }
                                 combinacionFotos.push(photoToMove);
                             }
                             return { ...row, idSeleccionado: targetId, fotos: combinacionFotos };
                         }
-                        // Si es el origen, le removemos la foto
+                        // Si es la fila de origen, le removemos la foto que se traslada
                         if (row.idOriginal === idOriginal) {
                             return { ...row, fotos: updatedSourceFotos };
                         }
                         return row;
                     });
 
-                    // Si el grupo destino no existía, creamos la nueva fila con la foto huérfana
+                    // Si el grupo destino no existía en ninguna fila, lo creamos desde cero
                     if (!targetRow) {
                         newState.push({
                             idOriginal: `PROP_${Date.now()}`,
@@ -364,14 +371,15 @@ useEffect(() => {
                         });
                     }
 
-                    // Limpieza: si la fila de origen se quedó sin fotos, la borramos
+                    // Limpieza crítica: si la fila de origen se quedó vacía sin fotos, se remueve por completo
                     return newState.filter(row => row.fotos.length > 0);
                 });
-                return; // Termina la ejecución para que no ejecute el flujo normal
+                return; // Cortamos la ejecución para evitar que continúe al flujo normal inferior
             }
         }
 
-        // Flujo normal si cambias entre 'Antes' y 'Después'
+        // Flujo normal si cambias manualmente entre las opciones de la interfaz gráfica ('Antes' y 'Después')
+        saveToHistory(previewData); 
         setPreviewData(prev => prev.map((item) => {
             if (item.idOriginal !== idOriginal) return item;
             const updatedFotos = item.fotos.map((f, fIdx) => {
@@ -382,31 +390,27 @@ useEffect(() => {
             return { ...item, fotos: updatedFotos };
         }));
     };
-
-    // --- LÓGICA CORE: SELECCIÓN/EDICIÓN DE ID CON CORRECCIÓN Y FUSIÓN AUTOMÁTICA ---
+   // --- LÓGICA CORE: SELECCIÓN/EDICIÓN DE ID CON CORRECCIÓN Y FUSIÓN AUTOMÁTICA ---
     const handleIdSelection = (idOriginal, valorNuevo) => {
-        // Guardar estado actual en el historial antes de realizar la fusión/cambio
         saveToHistory(previewData);
-
         const targetValue = valorNuevo.toUpperCase();
 
         setPreviewData(prev => {
-            // Encuentra la fila que el usuario está editando actualmente
             const currentRow = prev.find(r => r.idOriginal === idOriginal);
             if (!currentRow) return prev;
 
-            // Revisamos si el nuevo ID ya existe en OTRA fila de la lista actual (FUSIÓN)
-            const duplicateRow = prev.find(r => r.idOriginal !== idOriginal && r.idSeleccionado.toUpperCase() === targetValue);
+            // Coincidencia inteligente: revisa tanto idOriginal como idSeleccionado de los demás elementos
+            const duplicateRow = prev.find(r => 
+                r.idOriginal !== idOriginal && 
+                (r.idSeleccionado.toUpperCase() === targetValue || r.idOriginal.toUpperCase() === targetValue)
+            );
 
             if (duplicateRow) {
-                // ¡Hay coincidencia! Vamos a unir las fotos de la fila editada dentro de la fila duplicada existente
                 return prev.map(row => {
                     if (row.idOriginal === duplicateRow.idOriginal) {
-                        // Combinamos las fotos de ambos bloques evitando duplicados exactos de b64Data si existieran
                         const combinacionFotos = [...row.fotos];
                         currentRow.fotos.forEach(f => {
                             if (!combinacionFotos.some(existente => existente.b64Data === f.b64Data)) {
-                                // Forzamos un rol coherente temporal si ya están ocupados el 'antes' y 'despues'
                                 const tieneAntes = combinacionFotos.some(x => x.rol === 'antes');
                                 const tieneDespues = combinacionFotos.some(x => x.rol === 'despues');
                                 
@@ -418,14 +422,13 @@ useEffect(() => {
                             }
                         });
 
-                        return { ...row, fotos: combinacionFotos };
+                        return { ...row, idSeleccionado: targetValue, fotos: combinacionFotos };
                     }
                     return row;
-                }).filter(row => row.idOriginal !== idOriginal); // Eliminamos la fila vieja que ya fue absorbida
+                }).filter(row => row.idOriginal !== idOriginal); 
             }
 
-            // Si no colisiona con ningún ID existente, simplemente actualiza el texto de forma normal
-            return prev.map(row => row.idOriginal === idOriginal ? { ...row, idSeleccionado: targetValue } : row);
+            return prev.map(row => row.idOriginal === idOriginal ? { ...row, idSeleccionado: targetValue, idAntes: targetValue, idDespues: targetValue } : row);
         });
     };
 
@@ -526,23 +529,13 @@ useEffect(() => {
             row.idDespues?.toUpperCase().includes(queryClean)
         );
     });
-
-    return (
+return (
         <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
             <button className={className} onClick={openConfig} disabled={isProcessing}>
                 <img src={wordIcon} alt="W" style={{ width: '20px', marginRight: '8px' }} />
                 {isProcessing ? "Cargando..." : `${type} ${previewData.length > 0 ? `(${previewData.length})` : ''}`}
             </button>
 
-            {previewData.length > 0 && (
-                <button
-                    onClick={clearProgress} 
-                    style={{ background: 'transparent', border: 'none', padding: '6px 5px', cursor: 'pointer', fontSize: '18px' }}
-                    title="Restablecer reporte"
-                >
-                    <img src={restartIcon} alt="restart" style={{ width: '25px', marginRight: '8px' }} />
-                </button>
-            )}
 
             {showModal && (
                 <div className="report-modal-overlay">
@@ -564,7 +557,7 @@ useEffect(() => {
                                             cursor: history.length > 0 ? 'pointer' : 'not-allowed',
                                             display: 'flex',
                                             alignItems: 'center',
-                                            opacity: history.length > 0 ? 1 : 0.35, // Se atenúa si no hay historial
+                                            opacity: history.length > 0 ? 1 : 0.35,
                                             transition: 'opacity 0.2s ease, transform 0.1s ease',
                                         }}
                                         title={history.length > 0 ? `Deshacer último cambio` : "No hay cambio para deshacer"}
@@ -578,7 +571,6 @@ useEffect(() => {
                                                 width: '22px', 
                                                 height: '22px', 
                                                 objectFit: 'contain',
-                                                 
                                             }} 
                                         />
                                         {history.length > 0 && (
@@ -587,41 +579,75 @@ useEffect(() => {
                                             </span>
                                         )}
                                     </button>
-
-                                    
                                 </div>
                             </div>
 
-                            {/* BARRA DE FILTRADO */}
-                            <div style={{ width: '100%', position: 'relative' }}>
-                                <input 
-                                    type="text"
-                                    placeholder="¿Que ID necesitas encontrar?"
-                                    value={searchTerm}
-                                    onChange={(e) => setSearchTerm(e.target.value)}
-                                    style={{
-                                        width: '100%',
-                                        padding: '12px 12px',
-                                        fontSize: '12px',
-                                        borderRadius: '25px',
-                                        border: '1px #cbd5e1',
-                                        outline: 'none',
-                                        boxSizing: 'border-box',
-                                        backgroundColor: '#f0f0f0',
-                                        
-                                    }}
-                                />
-                                        <span style={{ fontSize: '10px', color: '#9da2a8', fontWeight: '500' }}>
-                                            Mostrando {filteredData.length} de {previewData.length} ítems
-                                        </span>
-                                {searchTerm && (
-                                    <button 
-                                        onClick={() => setSearchTerm("")}
-                                        style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer' }}
-                                    >
-                                        ✕
-                                    </button>
-                                )}
+                            {/* BARRA DE FILTRADO CON EL BOTÓN INTEGRADOABAJO A LA DERECHA */}
+                            <div style={{ width: '100%', position: 'relative', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                <div style={{ width: '100%', position: 'relative' }}>
+                                    <input 
+                                        type="text"
+                                        placeholder="¿Que ID necesitas encontrar?"
+                                        value={searchTerm}
+                                        onChange={(e) => setSearchTerm(e.target.value)}
+                                        style={{
+                                            width: '100%',
+                                            padding: '12px 12px',
+                                            fontSize: '12px',
+                                            borderRadius: '25px',
+                                            border: '1px #cbd5e1',
+                                            outline: 'none',
+                                            boxSizing: 'border-box',
+                                            backgroundColor: '#f0f0f0',
+                                        }}
+                                    />
+                                    {searchTerm && (
+                                        <button 
+                                            onClick={() => setSearchTerm("")}
+                                            style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer' }}
+                                        >
+                                            ✕
+                                        </button>
+                                    )}
+                                </div>
+
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', padding: '0 4px' }}>
+                                    <span style={{ fontSize: '10px', color: '#9da2a8', fontWeight: '500' }}>
+                                        Mostrando {filteredData.length} de {previewData.length} ítems
+                                    </span>
+
+                                    {/* 🔴 BOTÓN DE LIMPIAR LISTADO */}
+                                    {previewData.length > 0 && (
+                                        <button
+                                            type="button"
+                                            onClick={clearProgress}
+                                            style={{
+                                                background: 'transparent',
+                                                border: 'none',
+                                                color: '#ef444493',
+                                                fontSize: '11px',
+                                                fontWeight: '600',
+                                                cursor: 'default',
+                                                padding: '5px 6px',
+                                                borderRadius: '13px',
+                                                transition: 'all 0.3s ease',
+                                                opacity: 0.75
+                                            }}
+                                            onMouseEnter={(e) => {
+                                                e.currentTarget.style.opacity = '1';
+                                                e.currentTarget.style.color = '#ef4444';
+                                            }}
+                                            onMouseLeave={(e) => {
+                                                e.currentTarget.style.opacity = '0.75';
+                                                e.currentTarget.style.color = '#ef444493';
+                                            }}
+                                           
+                                            title="Vaciar listado completo para un nuevo registro"
+                                        >
+                                        ¡Pongamos esto en 0!
+                                        </button>
+                                    )}
+                                </div>
                             </div>
                         </div>
 
@@ -665,12 +691,10 @@ useEffect(() => {
                                                             />
                                                             D: {row.idDespues}
                                                         </label>
-                                                        {/* Al presionar 'Enter' o perder el foco se puede consolidar la edición */}
                                                         <input 
                                                             type="text" 
                                                             value={row.idSeleccionado} 
                                                             onChange={(e) => {
-                                                                // Permite escritura fluida sin disparar inmediatamente la fusión en cada carácter
                                                                 const val = e.target.value;
                                                                 setPreviewData(prev => prev.map(r => r.idOriginal === row.idOriginal ? { ...r, idSeleccionado: val } : r));
                                                             }} 
