@@ -311,6 +311,67 @@ useEffect(() => {
 
     const handleRoleChange = (idOriginal, fotoIdx, nuevoRol) => {
         saveToHistory(previewData); // Guardar historial antes de cambiar roles
+        
+        // INTERCEPTAR SI EL USUARIO SELECCIONA 'NINGUNO' (OMITIR)
+        if (nuevoRol === 'ninguno') {
+            const nuevoId = window.prompt("Introduce el ID correcto para mover esta foto a su grupo correspondiente:");
+            
+            if (nuevoId && nuevoId.trim().toUpperCase() !== idOriginal.toUpperCase()) {
+                const targetId = nuevoId.trim().toUpperCase();
+                
+                setPreviewData(prev => {
+                    const sourceRow = prev.find(r => r.idOriginal === idOriginal);
+                    if (!sourceRow) return prev;
+
+                    // Extraemos la foto a mudar y dejamos las demás en la fila origen
+                    const photoToMove = { ...sourceRow.fotos[fotoIdx], rol: 'antes' }; // Cambia a 'antes' por defecto en el nuevo grupo
+                    const updatedSourceFotos = sourceRow.fotos.filter((_, idx) => idx !== fotoIdx);
+
+                    // Buscamos si ya existe el grupo destino (ej: 'P16L1M056-T')
+                    const targetRow = prev.find(r => 
+                        r.idSeleccionado.toUpperCase() === targetId || 
+                        r.idOriginal.toUpperCase() === targetId
+                    );
+
+                    let newState = prev.map(row => {
+                        // Si es el destino, le sumamos la foto fusionándola
+                        if (targetRow && row.idOriginal === targetRow.idOriginal) {
+                            const combinacionFotos = [...row.fotos];
+                            if (!combinacionFotos.some(f => f.b64Data === photoToMove.b64Data)) {
+                                const tieneAntes = combinacionFotos.some(x => x.rol === 'antes');
+                                if (tieneAntes) photoToMove.rol = 'despues'; // Si ya hay un 'antes', la acomoda como 'después'
+                                combinacionFotos.push(photoToMove);
+                            }
+                            return { ...row, idSeleccionado: targetId, fotos: combinacionFotos };
+                        }
+                        // Si es el origen, le removemos la foto
+                        if (row.idOriginal === idOriginal) {
+                            return { ...row, fotos: updatedSourceFotos };
+                        }
+                        return row;
+                    });
+
+                    // Si el grupo destino no existía, creamos la nueva fila con la foto huérfana
+                    if (!targetRow) {
+                        newState.push({
+                            idOriginal: `PROP_${Date.now()}`,
+                            idSeleccionado: targetId,
+                            idAntes: targetId,
+                            idDespues: targetId,
+                            ubi: sourceRow.ubi,
+                            fecha: sourceRow.fecha,
+                            fotos: [photoToMove]
+                        });
+                    }
+
+                    // Limpieza: si la fila de origen se quedó sin fotos, la borramos
+                    return newState.filter(row => row.fotos.length > 0);
+                });
+                return; // Termina la ejecución para que no ejecute el flujo normal
+            }
+        }
+
+        // Flujo normal si cambias entre 'Antes' y 'Después'
         setPreviewData(prev => prev.map((item) => {
             if (item.idOriginal !== idOriginal) return item;
             const updatedFotos = item.fotos.map((f, fIdx) => {
