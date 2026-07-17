@@ -14,7 +14,7 @@ const ReportFiller = ({ results, type, templatePath, className, system = 'GENERA
     const [previewData, setPreviewData] = useState([]);
     const [isProcessing, setIsProcessing] = useState(false);
     
-    // ESTADOS NUEVOS: FILTRADO E HISTORIAL PARA UNDO
+    // ESTADOS: FILTRADO E HISTORIAL PARA UNDO
     const [searchTerm, setSearchTerm] = useState("");
     const [history, setHistory] = useState([]); 
 
@@ -23,99 +23,105 @@ const ReportFiller = ({ results, type, templatePath, className, system = 'GENERA
     const DELETED_ITEMS_KEY = `report_deleted_${system}_${type}`;
 
     // ==========================================
-// 🔄 CICLOS DE VIDA CORREGIDOS PARA REACCIONAR A LOS LOTES
-// ==========================================
+    // 🔄 CICLOS DE VIDA CORREGIDOS PARA REACCIONAR A LOS LOTES
+    // ==========================================
 
-// --- EFECTO 1: CARGA INICIAL DESDE LOCALSTORAGE AL MONTAR ---
-useEffect(() => {
-    const savedDataStr = localStorage.getItem(LOCAL_STORAGE_KEY);
-    if (savedDataStr) {
-        try {
-            const parsed = JSON.parse(savedDataStr);
-            if (parsed && parsed.length > 0) {
-                setPreviewData(parsed);
-                return; // Si ya hay datos locales guardados, respetamos el caché
+    // --- EFECTO 1: CARGA INICIAL DESDE LOCALSTORAGE AL MONTAR ---
+    useEffect(() => {
+        const savedDataStr = localStorage.getItem(LOCAL_STORAGE_KEY);
+        if (savedDataStr) {
+            try {
+                const parsed = JSON.parse(savedDataStr);
+                if (parsed && parsed.length > 0) {
+                    setPreviewData(parsed);
+                    return; 
+                }
+            } catch (e) {
+                console.error("Error al parsear el progreso guardado:", e);
             }
-        } catch (e) {
-            console.error("Error al parsear el progreso guardado:", e);
         }
-    }
-}, [LOCAL_STORAGE_KEY]);
+    }, [LOCAL_STORAGE_KEY]);
 
-// --- EFECTO 2: GUARDAR AUTOMÁTICAMENTE CUANDO HAYA CAMBIOS REALES ---
-useEffect(() => {
-    // Guardamos en el localStorage solo si realmente hay ítems en la previsualización
-    if (previewData && previewData.length > 0) {
-        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(previewData));
-    }
-}, [previewData, LOCAL_STORAGE_KEY]);
+    // --- EFECTO 2: GUARDAR AUTOMÁTICAMENTE CUANDO HAYA CAMBIOS REALES ---
+    useEffect(() => {
+        if (previewData && previewData.length > 0) {
+            localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(previewData));
+        }
+    }, [previewData, LOCAL_STORAGE_KEY]);
 
-// --- EFECTO NUEVO: ESCUCHAR INCORPORACIÓN DE NUEVAS FOTOS POR LOTE/RESULTADOS ---
-useEffect(() => {
-    if (results && results.length > 0) {
-        // Ejecutamos la lógica de mapeo silenciosamente para poblar el previewData en segundo plano
-        const sincronizarFotosEntrantes = async () => {
-            const today = new Date().toISOString().split('T')[0];
-            const savedDataStr = localStorage.getItem(LOCAL_STORAGE_KEY);
-            let currentItems = savedDataStr ? JSON.parse(savedDataStr) : [...previewData];
+    // --- EFECTO NUEVO: ESCUCHAR INCORPORACIÓN DE NUEVAS FOTOS POR LOTE/RESULTADOS ---
+    useEffect(() => {
+        if (results && results.length > 0) {
+            const sincronizarFotosEntrantes = async () => {
+                const today = new Date().toISOString().split('T')[0];
+                const savedDataStr = localStorage.getItem(LOCAL_STORAGE_KEY);
+                let currentItems = savedDataStr ? JSON.parse(savedDataStr) : [...previewData];
 
-            const seenNormalizedIdsInModal = new Set(currentItems.map(item => normalizeIdForMatching(item.idOriginal)));
-            let huboCambios = false;
+                let huboCambios = false;
 
-            for (const res of results) {
-                if (!res || !res.id) continue;
-                const currentNormalized = normalizeIdForMatching(res.id);
+                for (const res of results) {
+                    if (!res || !res.id) continue;
+                    const currentNormalized = normalizeIdForMatching(res.id);
 
-                // Si esta foto ya está procesada en este informe, la ignoramos para evitar bucles
-                if (seenNormalizedIdsInModal.has(currentNormalized)) continue;
+                    // Estructuramos la foto entrante
+                    const archivoAGuardar = res.originalFile || res.thumb;
+                    const base64Generado = await fileToBase64(archivoAGuardar);
 
-                // Estructuramos la foto entrante
-                const archivoAGuardar = res.originalFile || res.thumb;
-                const base64Generado = await fileToBase64(archivoAGuardar);
+                    // Buscamos si el ID ya existe en nuestro listado para emparejarlo
+                    const filaExistenteIdx = currentItems.findIndex(item => normalizeIdForMatching(item.idOriginal) === currentNormalized);
 
-                currentItems.push({
-                    idOriginal: res.id,
-                    idSeleccionado: res.id,
-                    idAntes: res.id,
-                    idDespues: res.id,
-                    ubi: res.masterInfo?.UBICACION || "No encontrado",
-                    fecha: today,
-                    fotos: [{
-                        b64Data: base64Generado,
-                        rol: 'antes',
-                        idDetectadoOCR: res.id
-                    }]
-                });
-                seenNormalizedIdsInModal.add(currentNormalized);
-                huboCambios = true;
-            }
+                    if (filaExistenteIdx !== -1) {
+                        // 🔄 SI YA EXISTE EL ID: Validamos que la foto no esté ya metida en el grupo
+                        const yaTieneLaFoto = currentItems[filaExistenteIdx].fotos.some(f => f.b64Data === base64Generado);
+                        
+                        if (!yaTieneLaFoto) {
+                            const cantidadFotos = currentItems[filaExistenteIdx].fotos.length;
+                            currentItems[filaExistenteIdx].fotos.push({
+                                b64Data: base64Generado,
+                                rol: cantidadFotos === 1 ? 'despues' : 'ninguno', // Si es la segunda, va a "Después" automáticamente
+                                idDetectadoOCR: res.id
+                            });
+                            huboCambios = true;
+                        }
+                    } else {
+                        // ✨ SI NO EXISTE EL ID: Creamos la fila inicial (La primera foto será "Antes")
+                        currentItems.push({
+                            idOriginal: res.id,
+                            idSeleccionado: res.id,
+                            idAntes: res.id,
+                            idDespues: res.id,
+                            ubi: res.masterInfo?.UBICACION || "No encontrado",
+                            fecha: today,
+                            fotos: [{
+                                b64Data: base64Generado,
+                                rol: 'antes',
+                                idDetectadoOCR: res.id
+                            }]
+                        });
+                        huboCambios = true;
+                    }
+                }
 
-            if (huboCambios) {
-                setPreviewData(currentItems);
-                localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(currentItems));
-            }
-        };
+                if (huboCambios) {
+                    setPreviewData(currentItems);
+                    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(currentItems));
+                }
+            };
 
-        sincronizarFotosEntrantes();
-    }
-}, [results]);
+            sincronizarFotosEntrantes();
+        }
+    }, [results]);
+
     // --- HELPER: GUARDAR ESTADO EN EL HISTORIAL ANTES DE CAMBIOS ---
     const saveToHistory = (currentState) => {
-        // Guardamos una copia profunda del estado actual antes de modificarlo
         setHistory(prev => [...prev, JSON.parse(JSON.stringify(currentState))]);
     };
 
     // --- FUNCIÓN DE DESHACER (UNDO) ---
     const handleUndo = () => {
         if (history.length === 0) return;
-        
-        // Recuperar el último estado guardado
         const previousState = history[history.length - 1];
-        
-        // Remover el último elemento del historial
         setHistory(prev => prev.slice(0, -1));
-        
-        // Restaurar los datos de previsualización
         setPreviewData(previousState);
     };
 
@@ -210,9 +216,8 @@ useEffect(() => {
     };
 
     // --- ELIMINAR ELEMENTO ---
-    // --- ELIMINAR ELEMENTO ---
     const handleRemoveItem = (idOriginal) => {
-        saveToHistory(previewData); // Guardar historial antes de borrar
+        saveToHistory(previewData); 
         
         const deletedStr = localStorage.getItem(DELETED_ITEMS_KEY);
         const deletedIds = deletedStr ? JSON.parse(deletedStr) : [];
@@ -231,10 +236,11 @@ useEffect(() => {
             localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updated));
         }
     };
-    // --- ENTRADA AL CONFIGURADOR ASÍNCRONO ---
+
+    // --- ENTRADA AL CONFIGURADOR ASÍNCRONO (DECLARACIÓN FIJADA) ---
     const openConfig = async () => {
         setSearchTerm(""); 
-        setHistory([]); // Limpiar historial al abrir ventana limpia
+        setHistory([]); 
         const savedDataStr = localStorage.getItem(LOCAL_STORAGE_KEY);
         let currentModalState = [];
         
@@ -242,7 +248,9 @@ useEffect(() => {
             try {
                 const parsed = JSON.parse(savedDataStr);
                 if (parsed && parsed.length > 0) currentModalState = parsed;
-            } catch (e) {}
+            } catch (e) {
+                console.error(e);
+            }
         }
 
         if (!results || results.length === 0) {
@@ -308,77 +316,98 @@ useEffect(() => {
         setShowModal(true);
     };
 
-   const handleRoleChange = (idOriginal, fotoIdx, nuevoRol) => {
-        // INTERCEPTAR SI EL USUARIO SELECCIONA OMITIR
+    // --- ENTRADA DE CAMBIO DE ROL ("OMITIR" / "NINGUNO") ---
+    const handleRoleChange = (idOriginal, fotoIdx, nuevoRol) => {
         if (nuevoRol === 'ninguno') {
             const nuevoId = window.prompt("¿Quieres modificar el Id de esta foto para unirla con otra?");
             
-            if (nuevoId && nuevoId.trim().toUpperCase() !== idOriginal.toUpperCase()) {
+            if (nuevoId && nuevoId.trim() !== "") {
                 const targetId = nuevoId.trim().toUpperCase();
                 
-                // Guardamos el historial JUSTO AQUÍ, una vez confirmado que hay un cambio real
                 saveToHistory(previewData);
 
                 setPreviewData(prev => {
                     const sourceRow = prev.find(r => r.idOriginal === idOriginal);
                     if (!sourceRow) return prev;
 
-                    // Extraemos la foto a mudar y la configuramos como 'antes' por defecto en su nuevo destino
+                    // Clonamos la foto y por defecto la seteamos como 'antes' en su nuevo destino
                     const photoToMove = { ...sourceRow.fotos[fotoIdx], rol: 'antes' }; 
                     const updatedSourceFotos = sourceRow.fotos.filter((_, idx) => idx !== fotoIdx);
 
-                    // Buscamos si ya existe el grupo destino (por idSeleccionado o por idOriginal)
+                    // Buscamos si ya existe una fila de destino que coincida con el ID ingresado
                     const targetRow = prev.find(r => 
                         r.idSeleccionado.toUpperCase() === targetId || 
                         r.idOriginal.toUpperCase() === targetId
                     );
 
-                    let newState = prev.map(row => {
-                        // Si es el bloque destino, le inyectamos la foto aplicando las reglas de combinación
-                        if (targetRow && row.idOriginal === targetRow.idOriginal) {
-                            const combinacionFotos = [...row.fotos];
-                            if (!combinacionFotos.some(f => f.b64Data === photoToMove.b64Data)) {
-                                const tieneAntes = combinacionFotos.some(x => x.rol === 'antes');
-                                const tieneDespues = combinacionFotos.some(x => x.rol === 'despues');
-                                
-                                // Si ya hay un 'antes', la acomoda como 'después'. Si ambos están llenos, se queda en 'ninguno'
-                                if (tieneAntes && !tieneDespues) {
-                                    photoToMove.rol = 'despues';
-                                } else if (tieneAntes && tieneDespues) {
-                                    photoToMove.rol = 'ninguno';
-                                }
-                                combinacionFotos.push(photoToMove);
-                            }
-                            return { ...row, idSeleccionado: targetId, fotos: combinacionFotos };
-                        }
-                        // Si es la fila de origen, le removemos la foto que se traslada
-                        if (row.idOriginal === idOriginal) {
-                            return { ...row, fotos: updatedSourceFotos };
-                        }
-                        return row;
-                    });
+                    let newState;
 
-                    // Si el grupo destino no existía en ninguna fila, lo creamos desde cero
-                    if (!targetRow) {
-                        newState.push({
-                            idOriginal: `PROP_${Date.now()}`,
-                            idSeleccionado: targetId,
-                            idAntes: targetId,
-                            idDespues: targetId,
-                            ubi: sourceRow.ubi,
-                            fecha: sourceRow.fecha,
-                            fotos: [photoToMove]
+                    if (targetRow) {
+                        // 🔄 Si existe la fila de destino, le inyectamos la foto controlando sus roles
+                        newState = prev.map(row => {
+                            if (row.idOriginal === targetRow.idOriginal) {
+                                const combinacionFotos = [...row.fotos];
+                                if (!combinacionFotos.some(f => f.b64Data === photoToMove.b64Data)) {
+                                    const tieneAntes = combinacionFotos.some(x => x.rol === 'antes');
+                                    const tieneDespues = combinacionFotos.some(x => x.rol === 'despues');
+                                    
+                                    if (tieneAntes && !tieneDespues) {
+                                        photoToMove.rol = 'despues';
+                                    } else if (tieneAntes && tieneDespues) {
+                                        photoToMove.rol = 'ninguno';
+                                    }
+                                    combinacionFotos.push(photoToMove);
+                                }
+                                return { ...row, idSeleccionado: targetId, fotos: combinacionFotos };
+                            }
+                            if (row.idOriginal === idOriginal) {
+                                return { ...row, fotos: updatedSourceFotos };
+                            }
+                            return row;
                         });
+                    } else {
+                        // ✨ Si NO existe la fila, modificamos la actual si se quedó vacía o creamos una fila nueva independiente
+                        if (updatedSourceFotos.length === 0) {
+                            newState = prev.map(row => {
+                                if (row.idOriginal === idOriginal) {
+                                    return {
+                                        ...row,
+                                        idOriginal: targetId,
+                                        idSeleccionado: targetId,
+                                        idAntes: targetId,
+                                        idDespues: targetId,
+                                        fotos: [{ ...photoToMove, rol: 'antes' }]
+                                    };
+                                }
+                                return row;
+                            });
+                        } else {
+                            newState = prev.map(row => {
+                                if (row.idOriginal === idOriginal) {
+                                    return { ...row, fotos: updatedSourceFotos };
+                                }
+                                return row;
+                            });
+
+                            newState.push({
+                                idOriginal: targetId,
+                                idSeleccionado: targetId,
+                                idAntes: targetId,
+                                idDespues: targetId,
+                                ubi: sourceRow.ubi,
+                                fecha: sourceRow.fecha,
+                                fotos: [{ ...photoToMove, rol: 'antes' }]
+                            });
+                        }
                     }
 
-                    // Limpieza crítica: si la fila de origen se quedó vacía sin fotos, se remueve por completo
                     return newState.filter(row => row.fotos.length > 0);
                 });
-                return; // Cortamos la ejecución para evitar que continúe al flujo normal inferior
+                return; 
             }
         }
 
-        // Flujo normal si cambias manualmente entre las opciones de la interfaz gráfica ('Antes' y 'Después')
+        // Flujo normal si cambian a Antes/Después de manera ordinaria
         saveToHistory(previewData); 
         setPreviewData(prev => prev.map((item) => {
             if (item.idOriginal !== idOriginal) return item;
@@ -390,7 +419,8 @@ useEffect(() => {
             return { ...item, fotos: updatedFotos };
         }));
     };
-   // --- LÓGICA CORE: SELECCIÓN/EDICIÓN DE ID CON CORRECCIÓN Y FUSIÓN AUTOMÁTICA ---
+
+    // --- LÓGICA CORE: SELECCIÓN/EDICIÓN DE ID CON CORRECCIÓN Y FUSIÓN AUTOMÁTICA ---
     const handleIdSelection = (idOriginal, valorNuevo) => {
         saveToHistory(previewData);
         const targetValue = valorNuevo.toUpperCase();
@@ -399,7 +429,6 @@ useEffect(() => {
             const currentRow = prev.find(r => r.idOriginal === idOriginal);
             if (!currentRow) return prev;
 
-            // Coincidencia inteligente: revisa tanto idOriginal como idSeleccionado de los demás elementos
             const duplicateRow = prev.find(r => 
                 r.idOriginal !== idOriginal && 
                 (r.idSeleccionado.toUpperCase() === targetValue || r.idOriginal.toUpperCase() === targetValue)
@@ -529,13 +558,13 @@ useEffect(() => {
             row.idDespues?.toUpperCase().includes(queryClean)
         );
     });
-return (
+
+    return (
         <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
             <button className={className} onClick={openConfig} disabled={isProcessing}>
                 <img src={wordIcon} alt="W" style={{ width: '20px', marginRight: '8px' }} />
                 {isProcessing ? "Cargando..." : `${type} ${previewData.length > 0 ? `(${previewData.length})` : ''}`}
             </button>
-
 
             {showModal && (
                 <div className="report-modal-overlay">
@@ -582,7 +611,7 @@ return (
                                 </div>
                             </div>
 
-                            {/* BARRA DE FILTRADO CON EL BOTÓN INTEGRADOABAJO A LA DERECHA */}
+                            {/* BARRA DE FILTRADO CON EL BOTÓN INTEGRADO ABAJO A LA DERECHA */}
                             <div style={{ width: '100%', position: 'relative', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                 <div style={{ width: '100%', position: 'relative' }}>
                                     <input 
@@ -616,7 +645,7 @@ return (
                                         Mostrando {filteredData.length} de {previewData.length} ítems
                                     </span>
 
-                                    {/* 🔴 BOTÓN DE LIMPIAR LISTADO */}
+                                    {/* BOTÓN MINIMALISTA UBICADO EN LA LÍNEA ROJA SOLICITADA */}
                                     {previewData.length > 0 && (
                                         <button
                                             type="button"
@@ -624,27 +653,26 @@ return (
                                             style={{
                                                 background: 'transparent',
                                                 border: 'none',
-                                                color: '#ef444493',
+                                                color: '#f43f5e',
                                                 fontSize: '11px',
                                                 fontWeight: '600',
-                                                cursor: 'default',
-                                                padding: '5px 6px',
-                                                borderRadius: '13px',
-                                                transition: 'all 0.3s ease',
+                                                cursor: 'pointer',
+                                                padding: '2px 6px',
+                                                borderRadius: '4px',
+                                                transition: 'all 0.2s ease',
                                                 opacity: 0.75
                                             }}
                                             onMouseEnter={(e) => {
                                                 e.currentTarget.style.opacity = '1';
-                                                e.currentTarget.style.color = '#ef4444';
+                                                e.currentTarget.style.background = '#ffe4e6';
                                             }}
                                             onMouseLeave={(e) => {
                                                 e.currentTarget.style.opacity = '0.75';
-                                                e.currentTarget.style.color = '#ef444493';
+                                                e.currentTarget.style.background = 'transparent';
                                             }}
-                                           
-                                            title="Vaciar listado completo para un nuevo registro"
+                                            title="Vaciar listado completo para un mes nuevo"
                                         >
-                                        ¡Pongamos esto en 0!
+                                            🗑️ Limpiar listado
                                         </button>
                                     )}
                                 </div>
