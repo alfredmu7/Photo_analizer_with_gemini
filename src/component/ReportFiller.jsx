@@ -312,9 +312,9 @@ useEffect(() => {
     const handleRoleChange = (idOriginal, fotoIdx, nuevoRol) => {
         saveToHistory(previewData); // Guardar historial antes de cambiar roles
         
-        // INTERCEPTAR SI EL USUARIO SELECCIONA 'NINGUNO' (OMITIR)
+        // INTERCEPTAR SI EL USUARIO SELECCIONA OMITIR
         if (nuevoRol === 'ninguno') {
-            const nuevoId = window.prompt("Introduce el ID correcto para mover esta foto a su grupo correspondiente:");
+            const nuevoId = window.prompt("¿Quieres modificar el Id de esta foto para unirla con otra?");
             
             if (nuevoId && nuevoId.trim().toUpperCase() !== idOriginal.toUpperCase()) {
                 const targetId = nuevoId.trim().toUpperCase();
