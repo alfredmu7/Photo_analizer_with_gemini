@@ -18,73 +18,36 @@ const ReportFiller = ({ results, type, templatePath, className, system = 'GENERA
     const [searchTerm, setSearchTerm] = useState("");
     const [history, setHistory] = useState([]); 
 
-    // LLAVES ÚNICAS DE MEMORIA LOCAL
-    const LOCAL_STORAGE_KEY = `report_base64_prog_${system}_${type}`;
-    const DELETED_ITEMS_KEY = `report_deleted_${system}_${type}`;
-
-    // ==========================================
-    // 🔄 CICLOS DE VIDA CORREGIDOS PARA REACCIONAR A LOS LOTES
-    // ==========================================
-
-    // --- EFECTO 1: CARGA INICIAL DESDE LOCALSTORAGE AL MONTAR ---
-    useEffect(() => {
-        const savedDataStr = localStorage.getItem(LOCAL_STORAGE_KEY);
-        if (savedDataStr) {
-            try {
-                const parsed = JSON.parse(savedDataStr);
-                if (parsed && parsed.length > 0) {
-                    setPreviewData(parsed);
-                    return; 
-                }
-            } catch (e) {
-                console.error("Error al parsear el progreso guardado:", e);
-            }
-        }
-    }, [LOCAL_STORAGE_KEY]);
-
-    // --- EFECTO 2: GUARDAR AUTOMÁTICAMENTE CUANDO HAYA CAMBIOS REALES ---
-    useEffect(() => {
-        if (previewData && previewData.length > 0) {
-            localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(previewData));
-        }
-    }, [previewData, LOCAL_STORAGE_KEY]);
-
-    // --- EFECTO NUEVO: ESCUCHAR INCORPORACIÓN DE NUEVAS FOTOS POR LOTE/RESULTADOS ---
+    // --- EFECTO: ESCUCHAR INCORPORACIÓN DE NUEVAS FOTOS POR LOTE (EN MEMORIA PURA) ---
     useEffect(() => {
         if (results && results.length > 0) {
-            const sincronizarFotosEntrantes = async () => {
+            const sincronizarFotosEntrantes = () => {
                 const today = new Date().toISOString().split('T')[0];
-                const savedDataStr = localStorage.getItem(LOCAL_STORAGE_KEY);
-                let currentItems = savedDataStr ? JSON.parse(savedDataStr) : [...previewData];
-
+                let currentItems = [...previewData];
                 let huboCambios = false;
 
                 for (const res of results) {
                     if (!res || !res.id) continue;
                     const currentNormalized = normalizeIdForMatching(res.id);
 
-                    // Estructuramos la foto entrante
                     const archivoAGuardar = res.originalFile || res.thumb;
-                    const base64Generado = await fileToBase64(archivoAGuardar);
+                    const blobUrlGenerado = fileToBlobUrl(archivoAGuardar);
 
-                    // Buscamos si el ID ya existe en nuestro listado para emparejarlo
                     const filaExistenteIdx = currentItems.findIndex(item => normalizeIdForMatching(item.idOriginal) === currentNormalized);
 
                     if (filaExistenteIdx !== -1) {
-                        // 🔄 SI YA EXISTE EL ID: Validamos que la foto no esté ya metida en el grupo
-                        const yaTieneLaFoto = currentItems[filaExistenteIdx].fotos.some(f => f.b64Data === base64Generado);
+                        const yaTieneLaFoto = currentItems[filaExistenteIdx].fotos.some(f => f.blobData === blobUrlGenerado);
                         
                         if (!yaTieneLaFoto) {
                             const cantidadFotos = currentItems[filaExistenteIdx].fotos.length;
                             currentItems[filaExistenteIdx].fotos.push({
-                                b64Data: base64Generado,
-                                rol: cantidadFotos === 1 ? 'despues' : 'ninguno', // Si es la segunda, va a "Después" automáticamente
+                                blobData: blobUrlGenerado,
+                                rol: cantidadFotos === 1 ? 'despues' : 'ninguno',
                                 idDetectadoOCR: res.id
                             });
                             huboCambios = true;
                         }
                     } else {
-                        // ✨ SI NO EXISTE EL ID: Creamos la fila inicial (La primera foto será "Antes")
                         currentItems.push({
                             idOriginal: res.id,
                             idSeleccionado: res.id,
@@ -93,7 +56,7 @@ const ReportFiller = ({ results, type, templatePath, className, system = 'GENERA
                             ubi: res.masterInfo?.UBICACION || "No encontrado",
                             fecha: today,
                             fotos: [{
-                                b64Data: base64Generado,
+                                blobData: blobUrlGenerado,
                                 rol: 'antes',
                                 idDetectadoOCR: res.id
                             }]
@@ -104,7 +67,6 @@ const ReportFiller = ({ results, type, templatePath, className, system = 'GENERA
 
                 if (huboCambios) {
                     setPreviewData(currentItems);
-                    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(currentItems));
                 }
             };
 
@@ -112,12 +74,10 @@ const ReportFiller = ({ results, type, templatePath, className, system = 'GENERA
         }
     }, [results]);
 
-    // --- HELPER: GUARDAR ESTADO EN EL HISTORIAL ANTES DE CAMBIOS ---
     const saveToHistory = (currentState) => {
         setHistory(prev => [...prev, JSON.parse(JSON.stringify(currentState))]);
     };
 
-    // --- FUNCIÓN DE DESHACER (UNDO) ---
     const handleUndo = () => {
         if (history.length === 0) return;
         const previousState = history[history.length - 1];
@@ -125,42 +85,34 @@ const ReportFiller = ({ results, type, templatePath, className, system = 'GENERA
         setPreviewData(previousState);
     };
 
-    // --- HELPER: CONVERTIR FILE BINARIO O URL BLOB A BASE64 ---
-    const fileToBase64 = (fileOrBlobUrl) => {
+    const fileToBlobUrl = (fileOrBlobUrl) => {
+        if (!fileOrBlobUrl) return null;
+        if (fileOrBlobUrl instanceof File || fileOrBlobUrl instanceof Blob) {
+            return URL.createObjectURL(fileOrBlobUrl);
+        }
+        return fileOrBlobUrl;
+    };
+
+    const convertBlobUrlToBase64 = (blobUrl) => {
         return new Promise((resolve) => {
-            if (!fileOrBlobUrl) return resolve(null);
-
-            const procesarImagen = (srcData) => {
-                const img = new Image();
-                img.src = srcData;
-                img.onload = () => {
-                    const canvas = document.createElement('canvas');
-                    const MAX_WIDTH = 1080; 
-                    const scale = img.width > MAX_WIDTH ? MAX_WIDTH / img.width : 1;
-                    canvas.width = img.width * scale;
-                    canvas.height = img.height * scale;
-                    
-                    const ctx = canvas.getContext('2d');
-                    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-                    resolve(canvas.toDataURL('image/jpeg', 0.70)); 
-                };
-                img.onerror = () => resolve(null);
+            if (!blobUrl) return resolve(null);
+            const img = new Image();
+            img.crossOrigin = 'Anonymous';
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                const MAX_WIDTH = 900; // Reducido para evitar picos de memoria RAM con lotes masivos
+                const scale = img.width > MAX_WIDTH ? MAX_WIDTH / img.width : 1;
+                canvas.width = img.width * scale;
+                canvas.height = img.height * scale;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                resolve(canvas.toDataURL('image/jpeg', 0.65)); // Compresión eficiente
             };
-
-            if (fileOrBlobUrl instanceof File) {
-                const reader = new FileReader();
-                reader.readAsDataURL(fileOrBlobUrl);
-                reader.onload = (e) => procesarImagen(e.target.result);
-                reader.onerror = () => resolve(null);
-            } else if (typeof fileOrBlobUrl === 'string') {
-                procesarImagen(fileOrBlobUrl);
-            } else {
-                resolve(null);
-            }
+            img.onerror = () => resolve(null);
+            img.src = blobUrl;
         });
     };
 
-    // --- FUNCIÓN DE ESTAMPADO FINAL (MARCA DE AGUA) ---
     const applyWatermark = (base64Src, dateStr) => {
         return new Promise((resolve) => {
             if (!base64Src || !dateStr) return resolve(null);
@@ -169,7 +121,7 @@ const ReportFiller = ({ results, type, templatePath, className, system = 'GENERA
             img.src = base64Src;
             img.onload = () => {
                 const canvas = document.createElement('canvas');
-                const MAX_WIDTH = 1280; 
+                const MAX_WIDTH = 900;
                 const scale = img.width > MAX_WIDTH ? MAX_WIDTH / img.width : 1;
                 canvas.width = img.width * scale;
                 canvas.height = img.height * scale;
@@ -202,9 +154,9 @@ const ReportFiller = ({ results, type, templatePath, className, system = 'GENERA
                     ctx.fillText(formattedDate, dateX, logoY + (stampHeight / 2));
                     ctx.drawImage(logo, logoX, logoY, logoW, logoH);
 
-                    resolve(canvas.toDataURL('image/jpeg', 0.85));
+                    resolve(canvas.toDataURL('image/jpeg', 0.70));
                 };
-                logo.onerror = () => resolve(canvas.toDataURL('image/jpeg', 0.85));
+                logo.onerror = () => resolve(canvas.toDataURL('image/jpeg', 0.70));
             };
             img.onerror = () => resolve(null);
         });
@@ -215,199 +167,19 @@ const ReportFiller = ({ results, type, templatePath, className, system = 'GENERA
         return id.toUpperCase().replace(/([A-Z])0+/g, '$1').replace(/[^A-Z0-9]/g, '');
     };
 
-    // --- ELIMINAR ELEMENTO ---
     const handleRemoveItem = (idOriginal) => {
         saveToHistory(previewData); 
-        
-        const deletedStr = localStorage.getItem(DELETED_ITEMS_KEY);
-        const deletedIds = deletedStr ? JSON.parse(deletedStr) : [];
-        
-        if (!deletedIds.includes(idOriginal)) {
-            deletedIds.push(idOriginal);
-            localStorage.setItem(DELETED_ITEMS_KEY, JSON.stringify(deletedIds));
-        }
-
         const updated = previewData.filter(item => item.idOriginal !== idOriginal);
         setPreviewData(updated);
-        
-        if (updated.length === 0) {
-            localStorage.removeItem(LOCAL_STORAGE_KEY);
-        } else {
-            localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updated));
-        }
     };
 
-    // --- ENTRADA AL CONFIGURADOR ASÍNCRONO (DECLARACIÓN FIJADA) ---
-    const openConfig = async () => {
+    const openConfig = () => {
         setSearchTerm(""); 
         setHistory([]); 
-        const savedDataStr = localStorage.getItem(LOCAL_STORAGE_KEY);
-        let currentModalState = [];
-        
-        if (savedDataStr) {
-            try {
-                const parsed = JSON.parse(savedDataStr);
-                if (parsed && parsed.length > 0) currentModalState = parsed;
-            } catch (e) {
-                console.error(e);
-            }
-        }
-
-        if (!results || results.length === 0) {
-            setPreviewData(currentModalState);
-            setShowModal(true);
-            return;
-        }
-
-        setIsProcessing(true);
-        const today = new Date().toISOString().split('T')[0];
-        
-        const deletedStr = localStorage.getItem(DELETED_ITEMS_KEY);
-        const deletedIds = deletedStr ? JSON.parse(deletedStr) : [];
-        const setDeletedIds = new Set(deletedIds.map(id => normalizeIdForMatching(id)));
-
-        const seenNormalizedIdsInModal = new Set(currentModalState.map(item => normalizeIdForMatching(item.idOriginal)));
-        const seenNormalizedIdsInResults = new Set();
-
-        const updatedState = [...currentModalState];
-
-        for (let i = 0; i < results.length; i++) {
-            const res = results[i];
-            if (!res || !res.id) continue;
-
-            const currentNormalized = normalizeIdForMatching(res.id);
-            if (seenNormalizedIdsInResults.has(currentNormalized)) continue;
-            seenNormalizedIdsInResults.add(currentNormalized);
-
-            if (seenNormalizedIdsInModal.has(currentNormalized)) continue; 
-            if (setDeletedIds.has(currentNormalized)) continue; 
-
-            const todasLasFotosDelId = results.filter(r => normalizeIdForMatching(r.id) === currentNormalized);
-            
-            const fotosEstructuradas = [];
-            for (let index = 0; index < todasLasFotosDelId.length; index++) {
-                const foto = todasLasFotosDelId[index];
-                const archivoAGuardar = foto.originalFile || foto.thumb;
-                const base64Generado = await fileToBase64(archivoAGuardar);
-
-                fotosEstructuradas.push({
-                    b64Data: base64Generado,
-                    rol: index === 0 ? 'antes' : index === 1 ? 'despues' : 'ninguno',
-                    idDetectadoOCR: foto.id 
-                });
-            }
-
-            const idAntesPropuesto = fotosEstructuradas[0]?.idDetectadoOCR || res.id;
-            const idDespuesPropuesto = fotosEstructuradas[1]?.idDetectadoOCR || idAntesPropuesto;
-
-            updatedState.push({
-                idOriginal: res.id,
-                idSeleccionado: idDespuesPropuesto, 
-                idAntes: idAntesPropuesto,
-                idDespues: idDespuesPropuesto,
-                ubi: res.masterInfo?.UBICACION || "No encontrado",
-                fecha: today,
-                fotos: fotosEstructuradas
-            });
-        }
-
-        setPreviewData(updatedState);
-        setIsProcessing(false);
         setShowModal(true);
     };
 
-    // --- ENTRADA DE CAMBIO DE ROL ("OMITIR" / "NINGUNO") ---
     const handleRoleChange = (idOriginal, fotoIdx, nuevoRol) => {
-        if (nuevoRol === 'ninguno') {
-            const nuevoId = window.prompt("¿Quieres modificar el Id de esta foto para unirla con otra?");
-            
-            if (nuevoId && nuevoId.trim() !== "") {
-                const targetId = nuevoId.trim().toUpperCase();
-                
-                saveToHistory(previewData);
-
-                setPreviewData(prev => {
-                    const sourceRow = prev.find(r => r.idOriginal === idOriginal);
-                    if (!sourceRow) return prev;
-
-                    // Clonamos la foto y por defecto la seteamos como 'antes' en su nuevo destino
-                    const photoToMove = { ...sourceRow.fotos[fotoIdx], rol: 'antes' }; 
-                    const updatedSourceFotos = sourceRow.fotos.filter((_, idx) => idx !== fotoIdx);
-
-                    // Buscamos si ya existe una fila de destino que coincida con el ID ingresado
-                    const targetRow = prev.find(r => 
-                        r.idSeleccionado.toUpperCase() === targetId || 
-                        r.idOriginal.toUpperCase() === targetId
-                    );
-
-                    let newState;
-
-                    if (targetRow) {
-                        // 🔄 Si existe la fila de destino, le inyectamos la foto controlando sus roles
-                        newState = prev.map(row => {
-                            if (row.idOriginal === targetRow.idOriginal) {
-                                const combinacionFotos = [...row.fotos];
-                                if (!combinacionFotos.some(f => f.b64Data === photoToMove.b64Data)) {
-                                    const tieneAntes = combinacionFotos.some(x => x.rol === 'antes');
-                                    const tieneDespues = combinacionFotos.some(x => x.rol === 'despues');
-                                    
-                                    if (tieneAntes && !tieneDespues) {
-                                        photoToMove.rol = 'despues';
-                                    } else if (tieneAntes && tieneDespues) {
-                                        photoToMove.rol = 'ninguno';
-                                    }
-                                    combinacionFotos.push(photoToMove);
-                                }
-                                return { ...row, idSeleccionado: targetId, fotos: combinacionFotos };
-                            }
-                            if (row.idOriginal === idOriginal) {
-                                return { ...row, fotos: updatedSourceFotos };
-                            }
-                            return row;
-                        });
-                    } else {
-                        // ✨ Si NO existe la fila, modificamos la actual si se quedó vacía o creamos una fila nueva independiente
-                        if (updatedSourceFotos.length === 0) {
-                            newState = prev.map(row => {
-                                if (row.idOriginal === idOriginal) {
-                                    return {
-                                        ...row,
-                                        idOriginal: targetId,
-                                        idSeleccionado: targetId,
-                                        idAntes: targetId,
-                                        idDespues: targetId,
-                                        fotos: [{ ...photoToMove, rol: 'antes' }]
-                                    };
-                                }
-                                return row;
-                            });
-                        } else {
-                            newState = prev.map(row => {
-                                if (row.idOriginal === idOriginal) {
-                                    return { ...row, fotos: updatedSourceFotos };
-                                }
-                                return row;
-                            });
-
-                            newState.push({
-                                idOriginal: targetId,
-                                idSeleccionado: targetId,
-                                idAntes: targetId,
-                                idDespues: targetId,
-                                ubi: sourceRow.ubi,
-                                fecha: sourceRow.fecha,
-                                fotos: [{ ...photoToMove, rol: 'antes' }]
-                            });
-                        }
-                    }
-
-                    return newState.filter(row => row.fotos.length > 0);
-                });
-                return; 
-            }
-        }
-
-        // Flujo normal si cambian a Antes/Después de manera ordinaria
         saveToHistory(previewData); 
         setPreviewData(prev => prev.map((item) => {
             if (item.idOriginal !== idOriginal) return item;
@@ -420,43 +192,11 @@ const ReportFiller = ({ results, type, templatePath, className, system = 'GENERA
         }));
     };
 
-    // --- LÓGICA CORE: SELECCIÓN/EDICIÓN DE ID CON CORRECCIÓN Y FUSIÓN AUTOMÁTICA ---
     const handleIdSelection = (idOriginal, valorNuevo) => {
         saveToHistory(previewData);
         const targetValue = valorNuevo.toUpperCase();
 
         setPreviewData(prev => {
-            const currentRow = prev.find(r => r.idOriginal === idOriginal);
-            if (!currentRow) return prev;
-
-            const duplicateRow = prev.find(r => 
-                r.idOriginal !== idOriginal && 
-                (r.idSeleccionado.toUpperCase() === targetValue || r.idOriginal.toUpperCase() === targetValue)
-            );
-
-            if (duplicateRow) {
-                return prev.map(row => {
-                    if (row.idOriginal === duplicateRow.idOriginal) {
-                        const combinacionFotos = [...row.fotos];
-                        currentRow.fotos.forEach(f => {
-                            if (!combinacionFotos.some(existente => existente.b64Data === f.b64Data)) {
-                                const tieneAntes = combinacionFotos.some(x => x.rol === 'antes');
-                                const tieneDespues = combinacionFotos.some(x => x.rol === 'despues');
-                                
-                                let nuevoRolAsignado = f.rol;
-                                if (f.rol === 'antes' && tieneAntes) nuevoRolAsignado = !tieneDespues ? 'despues' : 'ninguno';
-                                if (f.rol === 'despues' && tieneDespues) nuevoRolAsignado = !tieneAntes ? 'antes' : 'ninguno';
-
-                                combinacionFotos.push({ ...f, rol: nuevoRolAsignado });
-                            }
-                        });
-
-                        return { ...row, idSeleccionado: targetValue, fotos: combinacionFotos };
-                    }
-                    return row;
-                }).filter(row => row.idOriginal !== idOriginal); 
-            }
-
             return prev.map(row => row.idOriginal === idOriginal ? { ...row, idSeleccionado: targetValue, idAntes: targetValue, idDespues: targetValue } : row);
         });
     };
@@ -468,15 +208,19 @@ const ReportFiller = ({ results, type, templatePath, className, system = 'GENERA
     };
 
     const clearProgress = () => {
-        if (window.confirm("¿Seguro que deseas reiniciar este informe?")) {
-            localStorage.removeItem(LOCAL_STORAGE_KEY);
-            localStorage.removeItem(DELETED_ITEMS_KEY);
+        if (window.confirm("¿Seguro que deseas limpiar los elementos actuales?")) {
             setPreviewData([]);
             setHistory([]);
         }
     };
 
+    // --- GENERACIÓN OPTIMIZADA POR BLOQUES (PROTEGE CONTRA CONGELAMIENTO EN LOTES MASIVOS) ---
     const generateFinalReport = async () => {
+        if (previewData.length === 0) {
+            alert("No hay datos para generar el informe.");
+            return;
+        }
+
         setIsProcessing(true);
         try {
             const response = await fetch(templatePath);
@@ -507,27 +251,39 @@ const ReportFiller = ({ results, type, templatePath, className, system = 'GENERA
             doc.loadZip(zip);
 
             const cleanReportData = [];
-            for (const item of previewData) {
-                const fotoAntesObj = item.fotos.find(f => f.rol === 'antes');
-                const fotoDespuesObj = item.fotos.find(f => f.rol === 'despues');
+            
+            // Procesamiento seguro en lotes de 20 en 20 para liberar el hilo principal del navegador
+            const BATCH_SIZE = 20;
+            for (let i = 0; i < previewData.length; i += BATCH_SIZE) {
+                const batch = previewData.slice(i, i + BATCH_SIZE);
+                
+                for (const item of batch) {
+                    const fotoAntesObj = item.fotos.find(f => f.rol === 'antes');
+                    const fotoDespuesObj = item.fotos.find(f => f.rol === 'despues');
 
-                const base64Antes = fotoAntesObj?.b64Data ? await applyWatermark(fotoAntesObj.b64Data, item.fecha) : null;
-                const base64Despues = fotoDespuesObj?.b64Data ? await applyWatermark(fotoDespuesObj.b64Data, item.fecha) : null;
+                    const base64AntesCrudo = fotoAntesObj?.blobData ? await convertBlobUrlToBase64(fotoAntesObj.blobData) : null;
+                    const base64DespuesCrudo = fotoDespuesObj?.blobData ? await convertBlobUrlToBase64(fotoDespuesObj.blobData) : null;
 
-                let fechaFormateadaTabla = "";
-                if (item.fecha) {
-                    const [year, month, day] = item.fecha.split("-");
-                    fechaFormateadaTabla = `${day}-${month}-${year}`;
+                    const base64Antes = base64AntesCrudo ? await applyWatermark(base64AntesCrudo, item.fecha) : null;
+                    const base64Despues = base64DespuesCrudo ? await applyWatermark(base64DespuesCrudo, item.fecha) : null;
+
+                    let fechaFormateadaTabla = "";
+                    if (item.fecha) {
+                        const [year, month, day] = item.fecha.split("-");
+                        fechaFormateadaTabla = `${day}-${month}-${year}`;
+                    }
+
+                    cleanReportData.push({
+                        item: (cleanReportData.length + 1).toString().padStart(3, '0'),
+                        fecha: fechaFormateadaTabla,
+                        id: item.idSeleccionado || "", 
+                        ubi: item.ubi || "",
+                        foto_antes: base64Antes || transparentPixelBase64,
+                        foto_despues: base64Despues || transparentPixelBase64
+                    });
                 }
-
-                cleanReportData.push({
-                    item: (cleanReportData.length + 1).toString().padStart(3, '0'),
-                    fecha: fechaFormateadaTabla,
-                    id: item.idSeleccionado || "", 
-                    ubi: item.ubi || "",
-                    foto_antes: base64Antes || transparentPixelBase64,
-                    foto_despues: base64Despues || transparentPixelBase64
-                });
+                // Breve respiro al motor de Javascript entre lote y lote
+                await new Promise(resolve => setTimeout(resolve, 10));
             }
 
             doc.setData({
@@ -537,7 +293,11 @@ const ReportFiller = ({ results, type, templatePath, className, system = 'GENERA
             });
 
             doc.render();
-            const out = doc.getZip().generate({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+            const out = doc.getZip().generate({ 
+                type: 'blob', 
+                mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                compression: 'DEFLATE' // Optimiza el peso final del archivo Word
+            });
             saveAs(out, `Informe_${system}_${type}.docx`);
             setShowModal(false);
         } catch (error) {
@@ -547,17 +307,15 @@ const ReportFiller = ({ results, type, templatePath, className, system = 'GENERA
         setIsProcessing(false);
     };
 
-    // --- FILTRADO INTELIGENTE ---
     const queryClean = searchTerm.trim().toUpperCase();
     const filteredData = previewData.filter(row => {
         if (queryClean.length < 2) return true;
         return (
             row.idOriginal?.toUpperCase().includes(queryClean) ||
-            row.idSeleccionado?.toUpperCase().includes(queryClean) ||
-            row.idAntes?.toUpperCase().includes(queryClean) ||
-            row.idDespues?.toUpperCase().includes(queryClean)
+            row.idSeleccionado?.toUpperCase().includes(queryClean)
         );
     });
+
 
     return (
         <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
@@ -624,7 +382,7 @@ const ReportFiller = ({ results, type, templatePath, className, system = 'GENERA
                                             padding: '12px 12px',
                                             fontSize: '12px',
                                             borderRadius: '25px',
-                                            border: '1px #cbd5e1',
+                                            border: '1px solid #cbd5e1',
                                             outline: 'none',
                                             boxSizing: 'border-box',
                                             backgroundColor: '#f0f0f0',
@@ -645,7 +403,7 @@ const ReportFiller = ({ results, type, templatePath, className, system = 'GENERA
                                         Mostrando {filteredData.length} de {previewData.length} ítems
                                     </span>
 
-                                    {/* BOTÓN MINIMALISTA UBICADO EN LA LÍNEA ROJA SOLICITADA */}
+                                    {/* BOTÓN MINIMALISTA UBICADO EN LA LÍNEA SOLICITADA */}
                                     {previewData.length > 0 && (
                                         <button
                                             type="button"
@@ -743,18 +501,27 @@ const ReportFiller = ({ results, type, templatePath, className, system = 'GENERA
                                                 />
                                             </div>
                                             
+                                            {/* MINIATURAS DEL TAMAÑO EXACTO DEL CUADRO */}
                                             <div className="report-grid-fotos">
                                                 {row.fotos.map((foto, fotoIdx) => (
                                                     <div key={fotoIdx} className="report-foto-item">
-                                                        {foto.b64Data ? (
-                                                            <img src={foto.b64Data} alt="Preview" className="report-img-thumbnail" />
+                                                        {foto.blobData ? (
+                                                            <img 
+                                                                src={foto.blobData} 
+                                                                alt="Preview" 
+                                                                className="report-img-thumbnail" 
+                                                                style={{ width: '55px', height: '55px', objectFit: 'cover', borderRadius: '4px', display: 'block', border: '1px solid #ccc' }}
+                                                            />
                                                         ) : (
-                                                            <div className="report-img-thumbnail" style={{ background: '#e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '11px', color: '#64748b' }}>Sin imagen</div>
+                                                            <div className="report-img-thumbnail" style={{ width: '55px', height: '55px', background: '#e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', color: '#64748b', borderRadius: '4px' }}>
+                                                                Sin imagen
+                                                            </div>
                                                         )}
                                                         <select 
                                                             className="report-select-rol" 
                                                             value={foto.rol} 
                                                             onChange={(e) => handleRoleChange(row.idOriginal, fotoIdx, e.target.value)}
+                                                            style={{ fontSize: '11px', marginTop: '2px', width: '65px' }}
                                                         >
                                                             <option value="antes">Antes</option>
                                                             <option value="despues">Después</option>
@@ -768,7 +535,7 @@ const ReportFiller = ({ results, type, templatePath, className, system = 'GENERA
                                 })
                             ) : (
                                 <div style={{ textAlign: 'center', padding: '30px', color: '#64748b', fontSize: '14px' }}>
-                                     Oops! No veo un ID {searchTerm}
+                                    Oops! No veo un ID {searchTerm}
                                 </div>
                             )}
                         </div>

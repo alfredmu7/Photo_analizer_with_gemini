@@ -2,8 +2,7 @@ import React, { useState } from 'react';
 import ReportFiller from './ReportFiller'; 
 import '../styles/ReportSystemsManager.css';
 
-// 1. Recibimos lotePendiente y asignarLoteASistema como props desde el padre
-const ReportSystemsManager = ({ resultadosOCR, lotePendiente, asignarLoteASistema }) => {
+const ReportSystemsManager = ({ resultadosOCR = [], lotePendiente, asignarLoteASistema }) => {
     const [activeSystem, setActiveSystem] = useState('SACS');
     
     // Estado para controlar qué sistemas ya fueron desbloqueados con credenciales
@@ -24,34 +23,31 @@ const ReportSystemsManager = ({ resultadosOCR, lotePendiente, asignarLoteASistem
         CCTV: 'cctv123'
     };
 
+    // Helper para obtener el valor del ID sin importar el nombre del atributo
+    const getIdValue = (item) => (item?.id || item?.idDetectado || '').toString().toUpperCase();
+
     // 1. FILTRADO AUTOMÁTICO POR NOMENCLATURA
     const filtrarPorNomenclatura = (sistema) => {
-        if (!resultadosOCR || resultadosOCR.length === 0) return [];
+        if (!Array.isArray(resultadosOCR) || resultadosOCR.length === 0) return [];
         switch (sistema) {
             case 'CCTV':
-                return resultadosOCR.filter(r => r.id?.toUpperCase().startsWith('C'));
+                return resultadosOCR.filter(r => getIdValue(r).startsWith('C'));
             case 'SACS':
-                return resultadosOCR.filter(r => r.id?.toUpperCase().startsWith('A') || r.id?.toUpperCase().startsWith('CK'));
+                return resultadosOCR.filter(r => getIdValue(r).startsWith('A') || getIdValue(r).startsWith('CK'));
             case 'FADS':
-                return resultadosOCR.filter(r => r.id?.toUpperCase().startsWith('F') || r.id?.toUpperCase().startsWith('M'));
+                return resultadosOCR.filter(r => getIdValue(r).startsWith('F') || getIdValue(r).startsWith('M'));
             default:
                 return [];
         }
     };
 
-    // 2. LOGICA DE CONTROL TOTAL
+    // 2. LÓGICA DE OBTENCIÓN DE RESULTADOS
     const obtenerResultadosParaSistema = (sistema) => {
+        if (!Array.isArray(resultadosOCR)) return [];
         const automaticos = filtrarPorNomenclatura(sistema);
-        const porLote = resultadosOCR.filter(res => res.sistemaAsignado === sistema);
-        const todasLasFotos = [...porLote];
+        const porLote = resultadosOCR.filter(res => res?.sistemaAsignado === sistema);
         
-        automaticos.forEach(autoFoto => {
-            if (!todasLasFotos.some(f => f.id === autoFoto.id)) {
-                todasLasFotos.push(autoFoto);
-            }
-        });
-
-        return todasLasFotos;
+        return [...porLote, ...automaticos];
     };
 
     // VERIFICAR CONTRASEÑA
@@ -66,9 +62,9 @@ const ReportSystemsManager = ({ resultadosOCR, lotePendiente, asignarLoteASistem
         }
     };
 
-    // 🔒 Cierra el candado y bloquea el sistema inmediatamente
+    // Cierra el candado y bloquea el sistema inmediatamente
     const handleLockSystem = (e, sistema) => {
-        e.stopPropagation(); // 🛑 Evita que se dispare el evento del botón circular de abajo
+        e.stopPropagation();
         setUnlockedSystems(prev => ({
             ...prev,
             [sistema]: false
@@ -77,24 +73,25 @@ const ReportSystemsManager = ({ resultadosOCR, lotePendiente, asignarLoteASistem
         setPasswordInput('');
     };
 
-    // 🔑 Solicita clave de seguridad antes de inyectar el Grupo de Ids pendientes
-    const handleAsignarLoteSeguro = (sistema) => {
+    // Solicita clave de seguridad antes de inyectar el Grupo de Ids pendientes
+    const handleAsignarLoteSeguro = async (sistema) => {
         const confirmPassword = prompt(`Por seguridad, introduce la clave de ${sistema} para agregar este grupo de Ids:`);
         if (confirmPassword === null) return;
 
         if (confirmPassword === CREDENTIALS[sistema]) {
-            asignarLoteASistema(sistema);
-            alert("¡Ids asignados con éxito!");
+            if (typeof asignarLoteASistema === 'function') {
+                await asignarLoteASistema(sistema);
+                alert("¡Ids asignados con éxito!");
+            }
         } else {
             alert("❌ Contraseña incorrecta. Acción cancelada.");
         }
     };
 
-    // 🌟 Ajustado a la IZQUIERDA para no chocar con el badge de registros
     const floatingLockStyle = {
         position: 'absolute',
         top: '-6px',
-        left: '-6px', // 👈 Cambiado de right a left
+        left: '-6px',
         background: '#ef4444',
         color: '#fff',
         border: '2px solid #fff',
@@ -205,126 +202,57 @@ const ReportSystemsManager = ({ resultadosOCR, lotePendiente, asignarLoteASistem
             
             {/* PANEL DE ACCIÓN DINÁMICO */}
             <div className="systems-action-panel">
-                
-                {/* --- SECCIÓN SACS --- */}
-                {activeSystem === 'SACS' && (
-                    lotePendiente ? (
-                        <div style={{ padding: '15px', background: '#f8fafc', borderRadius: '12px', border: '1px dashed #3b82f6', textAlign: 'center', width: '100%' }}>
-                            <p style={{ margin: '0 0 12px 0', fontSize: '13px', color: '#22c55e', fontWeight: '600' }}>
-                                ¿Quieres guardar las {lotePendiente.length} fotos en Sacs?
-                            </p>
-                            <button 
-                                className="btn-platform" 
-                                onClick={() => handleAsignarLoteSeguro('SACS')}
-                                style={{ background: '#22c55e', color: '#fff', width: '100%', justifyContent: 'center', padding: '10px' }}
-                            >
-                                📥 Confirmar y agregar a SACS
-                            </button>
-                        </div>
-                    ) : !unlockedSystems.SACS ? (
-                        <form onSubmit={(e) => handleVerifyPassword(e, 'SACS')} className="auth-inline-form">
-                            <input 
-                                type="password" 
-                                placeholder="Clave SACS..." 
-                                value={passwordInput} 
-                                onChange={(e) => setPasswordInput(e.target.value)}
-                                className={`auth-input ${authError ? 'auth-input-error' : ''}`}
-                                autoFocus
-                            />
-                            <button type="submit" className="btn-auth-submit">Entrar</button>
-                        </form>
-                    ) : (
-                        <div style={{ width: '100%' }}>
-                            <ReportFiller 
-                                results={obtenerResultadosParaSistema('SACS')} 
-                                type="Mantenimiento"
-                                system="SACS"
-                                templatePath="/Informe_mto_otrosi_fads.docx"
-                                className="btn-platform"
-                            />
-                        </div>
-                    )
+
+                {/* BANNER DE LOTE PENDIENTE (SI EXISTE) */}
+                {lotePendiente && (
+                    <div style={{ 
+                        padding: '12px', 
+                        background: '#f8fafc', 
+                        borderRadius: '10px', 
+                        border: '1px dashed #3b82f6', 
+                        textAlign: 'center', 
+                        width: '100%',
+                        marginBottom: '15px' 
+                    }}>
+                        <p style={{ margin: '0 0 8px 0', fontSize: '13px', color: '#1e293b', fontWeight: '600' }}>
+                            Hay {lotePendiente.length} fotos listas para asignar a {activeSystem}
+                        </p>
+                        <button 
+                            type="button"
+                            className="btn-platform" 
+                            onClick={() => handleAsignarLoteSeguro(activeSystem)}
+                            style={{ background: '#22c55e', color: '#fff', width: '100%', justifyContent: 'center', padding: '8px' }}
+                        >
+                            📥 Confirmar y agregar a {activeSystem}
+                        </button>
+                    </div>
                 )}
 
-                {/* --- SECCIÓN FADS --- */}
-                {activeSystem === 'FADS' && (
-                    lotePendiente ? (
-                        <div style={{ padding: '15px', background: '#f8fafc', borderRadius: '12px', border: '1px dashed #ef4444', textAlign: 'center', width: '100%' }}>
-                            <p style={{ margin: '0 0 12px 0', fontSize: '13px', color: '#ff8645', fontWeight: '600' }}>
-                               ¿Quieres guardar las {lotePendiente.length} fotos en Fads?
-                            </p>
-                            <button 
-                                className="btn-platform" 
-                                onClick={() => handleAsignarLoteSeguro('FADS')}
-                                style={{ background: '#ff8645', color: '#fff', width: '100%', justifyContent: 'center', padding: '10px' }}
-                            >
-                                📥 Confirmar y agregar a FADS
-                            </button>
-                        </div>
-                    ) : !unlockedSystems.FADS ? (
-                        <form onSubmit={(e) => handleVerifyPassword(e, 'FADS')} className="auth-inline-form">
-                            <input 
-                                type="password" 
-                                placeholder="Clave FADS..." 
-                                value={passwordInput} 
-                                onChange={(e) => setPasswordInput(e.target.value)}
-                                className={`auth-input ${authError ? 'auth-input-error' : ''}`}
-                                autoFocus
-                            />
-                            <button type="submit" className="btn-auth-submit">Entrar</button>
-                        </form>
-                    ) : (
-                        <div style={{ width: '100%' }}>
-                            <ReportFiller 
-                                results={obtenerResultadosParaSistema('FADS')} 
-                                type="Mantenimiento"
-                                system="FADS"
-                                templatePath="/Informe_mto_otrosi_fads.docx"
-                                className="btn-platform"
-                            />
-                        </div>
-                    )
+                {/* AUTENTICACIÓN / ACCESO A REPORTFILLER */}
+                {!unlockedSystems[activeSystem] ? (
+                    <form onSubmit={(e) => handleVerifyPassword(e, activeSystem)} className="auth-inline-form">
+                        <input 
+                            type="password" 
+                            placeholder={`Clave ${activeSystem}...`}
+                            value={passwordInput} 
+                            onChange={(e) => setPasswordInput(e.target.value)}
+                            className={`auth-input ${authError ? 'auth-input-error' : ''}`}
+                            autoFocus
+                        />
+                        <button type="submit" className="btn-auth-submit">Entrar</button>
+                    </form>
+                ) : (
+                    <div style={{ width: '100%' }}>
+                        <ReportFiller 
+                            results={obtenerResultadosParaSistema(activeSystem)} 
+                            type="Mantenimiento"
+                            system={activeSystem}
+                            templatePath="/Informe_mto_otrosi_fads.docx"
+                            className="btn-platform"
+                        />
+                    </div>
                 )}
 
-                {/* --- SECCIÓN CCTV --- */}
-                {activeSystem === 'CCTV' && (
-                    lotePendiente ? (
-                        <div style={{ padding: '15px', background: '#f8fafc', borderRadius: '12px', border: '1px dashed #06b6d4', textAlign: 'center', width: '100%' }}>
-                            <p style={{ margin: '0 0 12px 0', fontSize: '13px', color: '#3b82f6', fontWeight: '600' }}>
-                                ¿Quieres guardar las {lotePendiente.length} fotos en Cctv?
-                            </p>
-                            <button 
-                                className="btn-platform" 
-                                onClick={() => handleAsignarLoteSeguro('CCTV')}
-                                style={{ background: '#3b82f6 ', color: '#fff', width: '100%', justifyContent: 'center', padding: '10px' }}
-                            >
-                                📥 Confirmar y agregar a CCTV
-                            </button>
-                        </div>
-                    ) : !unlockedSystems.CCTV ? (
-                        <form onSubmit={(e) => handleVerifyPassword(e, 'CCTV')} className="auth-inline-form">
-                            <input 
-                                type="password" 
-                                placeholder="Clave CCTV..." 
-                                value={passwordInput} 
-                                onChange={(e) => setPasswordInput(e.target.value)}
-                                className={`auth-input ${authError ? 'auth-input-error' : ''}`}
-                                autoFocus
-                            />
-                            <button type="submit" className="btn-auth-submit">Entrar</button>
-                        </form>
-                    ) : (
-                        <div style={{ width: '100%' }}>
-                            <ReportFiller 
-                                results={obtenerResultadosParaSistema('CCTV')} 
-                                type="Mantenimiento"
-                                system="CCTV"
-                                templatePath="/Informe_mto_otrosi_fads.docx"
-                                className="btn-platform"
-                            />
-                        </div>
-                    )
-                )}
             </div>
         </div>
     );

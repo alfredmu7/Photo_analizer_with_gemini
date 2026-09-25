@@ -6,7 +6,6 @@ import ReportFiller from './ReportFiller';
 import AccessGatekeeper from './AccessGatekeeper'; 
 import ReportSystemsManager from './ReportSystemsManager';
 import { db } from '../db/db';
-//import { inject200MockPhotos } from '../utils/simulateMockData'; 
 import '../styles/ScannerTerminal.css';
 
 import logoJCI from '../assets/logoJCIcompleto.png';
@@ -28,7 +27,6 @@ const ScannerTerminal = () => {
   const [stampingFiles, setStampingFiles] = useState([]);
   const [lotePendiente, setLotePendiente] = useState(null);
 
-  // Registro de URLs creadas para limpiarlas en memoria al desmontar/limpiar
   const createdBlobUrls = useRef([]);
 
   const trackBlobUrl = (url) => {
@@ -47,13 +45,18 @@ const ScannerTerminal = () => {
     };
   }, []);
 
-  // Carga inicial de datos previos almacenados en Dexie al montar el componente
+  // Sync desde Dexie mapeando con la clave primaria autogenerada (idDexie)
   useEffect(() => {
     const syncFromDexie = async () => {
       try {
         const localData = await db.resultadosOCR.toArray();
         if (localData && localData.length > 0) {
-          setResults(localData);
+          const formatted = localData.map(item => ({
+            ...item,
+            id: item.idDetectado || "N/A",
+            originalFile: item.originalFile || null
+          }));
+          setResults(formatted);
         }
       } catch (err) {
         console.error("Error al sincronizar desde IndexedDB:", err);
@@ -62,31 +65,7 @@ const ScannerTerminal = () => {
     syncFromDexie();
   }, []);
 
-  /*// --- FUNCION PARA EJECUTAR EL SIMULADOR ---
-  const handleSimularDatos = async () => {
-    setLoading(true);
-    try {
-      console.log("Iniciando inyección de datos simulados...");
-      await inject200MockPhotos();
-      const localData = await db.resultadosOCR.toArray();
-      setResults(localData);
-      console.log("¡200 fotos simuladas inyectadas con éxito!");
-    } catch (err) {
-      console.error("Error al inyectar simulaciones:", err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Asignar explicitamente a window en el montaje para evitar Uncaught TypeError
-  useEffect(() => {
-    window.simularFotos = handleSimularDatos;
-    return () => {
-      delete window.simularFotos;
-    };
-  }, []);*/
-
-  // --- EFECTOS DE CARGA DE BASE DE DATOS MASTER ---
+  // --- CARGA DE MASTER DB ---
   useEffect(() => {
     if (isAuthenticated && accessMode === 'full') {
       const loadMasterData = async () => {
@@ -100,14 +79,13 @@ const ScannerTerminal = () => {
           const resultsData = await Promise.allSettled(urls.map(url => fetch(url)));
           let combinedData = [];
 
-          for (let i = 0; i < resultsData.length; i++) {
-            const resStatus = resultsData[i];
+          for (const resStatus of resultsData) {
             if (resStatus.status === 'fulfilled' && resStatus.value.ok) {
               try {
                 const data = await resStatus.value.json();
                 if (Array.isArray(data)) combinedData = [...combinedData, ...data];
               } catch (parseErr) {
-                console.error(`Error JSON:`, parseErr);
+                console.error(`Error procesando JSON:`, parseErr);
               }
             }
           }
@@ -116,7 +94,7 @@ const ScannerTerminal = () => {
             setDbData(combinedData);
             setDbReady(true);
           } else {
-            throw new Error("No se cargó ninguna base de datos.");
+            throw new Error("No se cargó ninguna base de datos máster.");
           }
         } catch (err) {
           console.error("Error cargando BD:", err);
@@ -156,11 +134,6 @@ const ScannerTerminal = () => {
 
     const fileInput = document.getElementById('file-input');
     if (fileInput) fileInput.value = "";
-  };
-
-  const normalizeId = (id) => {
-    if (!id) return "";
-    return id.toString().toUpperCase().trim().replace(/P0+/g, 'P').replace(/L0+/g, 'L');
   };
 
   const getSimilarityScore = (str1, str2) => {
@@ -212,16 +185,17 @@ const ScannerTerminal = () => {
     let highestScore = 0;
     const UMBRAL_MINIMO = 70; 
 
-    dbData.forEach(item => {
+    for (let i = 0; i < dbData.length; i++) {
+      const item = dbData[i];
       const dbIdRaw = item.ID_PUERTA || item.ID || item.id || item.CODIGO || item.ID_DISPOSITIVO;
-      if (!dbIdRaw) return;
+      if (!dbIdRaw) continue;
       const dbClean = dbIdRaw.toString().toUpperCase().trim();
       const score = getSimilarityScore(searchClean, dbClean);
       if (score > highestScore) {
         highestScore = score;
         bestMatch = item;
       }
-    });
+    }
 
     if (bestMatch && highestScore >= UMBRAL_MINIMO) {
       return {
@@ -235,11 +209,13 @@ const ScannerTerminal = () => {
   };
 
   const compressImage = (file) => {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       const reader = new FileReader();
+      reader.onerror = () => reject(new Error("Error leyendo el archivo"));
       reader.readAsDataURL(file);
       reader.onload = (e) => {
         const img = new Image();
+        img.onerror = () => reject(new Error("Error al cargar imagen"));
         img.src = e.target.result;
         img.onload = () => {
           const canvas = document.createElement('canvas');
@@ -292,30 +268,43 @@ const ScannerTerminal = () => {
     return detectedText.trim();
   };
 
+  // --- ASIGNACIÓN DE LOTE A SISTEMA SELECCIONADO ---
   const asignarLoteASistema = async (sistemaElegido) => {
-    if (!lotePendiente) return;
-    const loteConSistema = lotePendiente.map(foto => ({ ...foto, sistemaAsignado: sistemaElegido }));
-    
-    try {
-      for (const item of loteConSistema) {
-        if (item.idDexie) {
-          await db.resultadosOCR.update(item.idDexie, { sistemaAsignado: sistemaElegido });
-        }
-      }
-    } catch (err) {
-      console.error("Error al actualizar sistema en Dexie:", err);
-    }
+    if (!lotePendiente || lotePendiente.length === 0) return;
 
-    setResults(prev => {
-      const nombresLote = new Set(lotePendiente.map(f => f.fileName));
-      const prevFiltrado = prev.filter(res => !nombresLote.has(res.fileName));
-      return [...prevFiltrado, ...loteConSistema];
-    });
-    
-    setLotePendiente(null);
+    try {
+      // 1. Actualizamos IndexedDB en segundo plano para persistencia
+      await db.transaction('rw', db.resultadosOCR, async () => {
+        for (const foto of lotePendiente) {
+          if (foto.idDexie) {
+            await db.resultadosOCR.update(foto.idDexie, { sistemaAsignado: sistemaElegido });
+          }
+        }
+      });
+
+      // 2. Mapeamos el arreglo en memoria actualizando el sistema
+      const idsPendientesDexie = new Set(lotePendiente.map(item => item.idDexie));
+
+      setResults(prevResults => 
+        prevResults.map(item => {
+          if (idsPendientesDexie.has(item.idDexie)) {
+            return { ...item, sistemaAsignado: sistemaElegido };
+          }
+          return item;
+        })
+      );
+
+      // 3. Limpiamos el banner del lote pendiente
+      setLotePendiente(null);
+
+    } catch (err) {
+      console.error("Error al asignar el lote al sistema en Dexie:", err);
+      alert("Ocurrió un error al guardar la asignación del sistema.");
+    }
   };
 
   const processImages = async (event) => {
+    if (!event.target.files) return;
     const files = Array.from(event.target.files).filter(f => f.type.startsWith('image/'));
     if (files.length === 0) return;
 
@@ -324,11 +313,10 @@ const ScannerTerminal = () => {
     setProgress({ current: 0, total: files.length });
 
     const currentResults = [];
-    const currentErrors = [];
     let completedCount = 0;
 
     const CONCURRENCY_LIMIT = 3; 
-    const MAX_RETRIES = 2;      
+    const MAX_RETRIES = 2;       
 
     const pool = files.map((file, index) => ({ file, index }));
 
@@ -348,8 +336,7 @@ const ScannerTerminal = () => {
             const finalId = detectedId.toUpperCase().trim(); 
             const masterInfo = queryMaster(finalId); 
             
-            const itemResultado = {
-              id: finalId, 
+            const itemParaGuardar = {
               idDetectado: finalId,
               fileName: file.name,
               thumb: thumbUrl,
@@ -359,9 +346,14 @@ const ScannerTerminal = () => {
               fechaGuardado: new Date().toISOString()
             };
 
-            const idDexie = await db.resultadosOCR.add(itemResultado);
-            itemResultado.idDexie = idDexie;
-            itemResultado.originalFile = file;
+            const idDexie = await db.resultadosOCR.add(itemParaGuardar);
+            
+            const itemResultado = {
+              ...itemParaGuardar,
+              id: finalId,
+              idDexie,
+              originalFile: file
+            };
 
             currentResults.push(itemResultado);
             break; 
@@ -371,12 +363,14 @@ const ScannerTerminal = () => {
               await new Promise(resolve => setTimeout(resolve, currentDelay));
               currentDelay *= 2; 
             } else {
-              currentErrors.push({ 
-                fileName: file.name, 
-                reason: err.message || "Error al procesar la imagen.", 
-                thumb: thumbUrl 
-              });
-              setErrors([...currentErrors]);
+              setErrors(prev => [
+                ...prev,
+                { 
+                  fileName: file.name, 
+                  reason: err.message || "Error al procesar la imagen.", 
+                  thumb: thumbUrl 
+                }
+              ]);
             }
           }
         }
@@ -401,11 +395,13 @@ const ScannerTerminal = () => {
   };
 
   const applyWatermark = (file, dateStr) => {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       const reader = new FileReader();
+      reader.onerror = () => reject(new Error("Error leyendo el archivo"));
       reader.readAsDataURL(file);
       reader.onload = (e) => {
         const img = new Image();
+        img.onerror = () => reject(new Error("Error al cargar la imagen original"));
         img.src = e.target.result;
         img.onload = () => {
           const canvas = document.createElement('canvas');
@@ -419,6 +415,7 @@ const ScannerTerminal = () => {
           const formattedDate = `${day}-${month}-${year.slice(-2)}`;
           
           const logo = new Image();
+          logo.onerror = () => reject(new Error("Error al cargar el logo de la marca de agua"));
           logo.src = logoJCI;
           logo.onload = () => {
             const fontSize = Math.floor(stampHeight * 0.28);
@@ -447,34 +444,40 @@ const ScannerTerminal = () => {
 
   const handleGenerateStamps = async () => {
     setLoading(true);
-    const zip = new JSZip();
-    for (let i = 0; i < stampingFiles.length; i++) {
-      const file = stampingFiles[i];
-      const stampedBlob = await applyWatermark(file, dateStamp);
-      zip.file(`FECHADA_${file.name}`, stampedBlob);
-      setProgress({ current: i + 1, total: stampingFiles.length });
+    try {
+      const zip = new JSZip();
+      for (let i = 0; i < stampingFiles.length; i++) {
+        const file = stampingFiles[i];
+        const stampedBlob = await applyWatermark(file, dateStamp);
+        zip.file(`FECHADA_${file.name}`, stampedBlob);
+        setProgress({ current: i + 1, total: stampingFiles.length });
+      }
+      const content = await zip.generateAsync({ type: "blob" });
+      saveAs(content, `Inspeccion_JCI_Fechada_${dateStamp}.zip`);
+    } catch (err) {
+      console.error("Error al generar estampas:", err);
+    } finally {
+      setLoading(false);
+      setStampingFiles([]);
+      setDateStamp("");
     }
-    const content = await zip.generateAsync({ type: "blob" });
-    saveAs(content, `Inspeccion_JCI_Fechada_${dateStamp}.zip`);
-    setLoading(false);
-    setStampingFiles([]);
-    setDateStamp("");
   };
 
   const downloadExcel = () => {
     const uniqueResultsMap = new Map();
     results.forEach(res => {
-      if (!uniqueResultsMap.has(res.id)) uniqueResultsMap.set(res.id, res);
+      const key = res.idDexie || res.idDetectado || res.fileName;
+      if (!uniqueResultsMap.has(key)) uniqueResultsMap.set(key, res);
     });
 
     const uniqueResultsArray = Array.from(uniqueResultsMap.values());
     const rows = uniqueResultsArray.map(res => ({
-      'ID Detectado': res.id,
-      'Dispositivo': res.masterInfo?.DISPOSITIVO,
-      'Ubicación': res.masterInfo?.UBICACION,
+      'ID Detectado': res.idDetectado || res.id || 'N/A',
+      'Dispositivo': res.masterInfo?.DISPOSITIVO || 'N/A',
+      'Ubicación': res.masterInfo?.UBICACION || 'N/A',
       'Sistema Asignado': res.sistemaAsignado || 'Ninguno',
-      'Archivo Original': res.fileName,
-      'Fecha Procesado': new Date().toLocaleString()
+      'Archivo Original': res.fileName || 'N/A',
+      'Fecha Procesado': res.fechaGuardado ? new Date(res.fechaGuardado).toLocaleString() : new Date().toLocaleString()
     }));
 
     const ws = XLSX.utils.json_to_sheet(rows);
@@ -485,20 +488,38 @@ const ScannerTerminal = () => {
 
   const downloadZip = async () => {
     const zip = new JSZip();
+    let hasFiles = false;
+
     results.forEach(res => {
       if (res.originalFile) {
-        const folderName = res.id.replace(/\//g, '_');
+        const folderName = (res.idDetectado || res.id || "SIN_ID").replace(/\//g, '_');
         zip.folder(folderName).file(res.fileName, res.originalFile);
+        hasFiles = true;
       }
     });
+
+    if (!hasFiles) {
+      alert("No hay archivos originales en memoria para empaquetar. Si recargaste la página, debes volver a cargar la carpeta.");
+      return;
+    }
+
     const content = await zip.generateAsync({ type: "blob" });
     saveAs(content, "Fotos_FADS_Organizadas.zip");
   };
 
   const handleOpenHighRes = (file) => {
-    if (!file) return;
-    const fullUrl = URL.createObjectURL(file);
-    window.open(fullUrl, '_blank');
+    if (!file) {
+      alert("La imagen original no está disponible en la sesión actual.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const newTab = window.open();
+      if (newTab) {
+        newTab.document.write(`<img src="${e.target.result}" style="max-width: 100%; height: auto;" />`);
+      }
+    };
+    reader.readAsDataURL(file);
   };
 
   return (
@@ -509,7 +530,7 @@ const ScannerTerminal = () => {
         <div className="main-card">
           <div className="header-blue">
             IDs Analyzer 
-            <span style={{fontSize: '11px', fontWeight: '400', color: '#fff', marginLeft: '10px', background: accessMode === 'full' ? '#22c55e' : '#eab308', padding: '8px 8px', borderRadius: '25px' }}>
+            <span style={{ fontSize: '11px', fontWeight: '400', color: '#fff', marginLeft: '10px', background: accessMode === 'full' ? '#22c55e' : '#eab308', padding: '8px 8px', borderRadius: '25px' }}>
               {accessMode === 'full' ? 'Acceso Total 🟢' : 'Core 🕓 Watermark & Date'}
             </span>
           </div>
@@ -530,26 +551,6 @@ const ScannerTerminal = () => {
                 📁 Cargar carpeta
               </button>
 
-              {/* BOTÓN DEL SIMULADOR 
-              {accessMode === 'full' && (
-                <button 
-                  className="btn-platform" 
-                  onClick={handleSimularDatos} 
-                  disabled={loading}
-                  style={{ 
-                    background: '#8b5cf6', 
-                    color: '#ffffff', 
-                    padding: '8px 18px',
-                    fontWeight: 'bold',
-                    cursor: 'pointer'
-                  }}
-                  title="Inyecta 200 fotos de prueba directamente en IndexedDB"
-                >
-                  🧪 Simular 200 Fotos
-                </button>
-              )}
-              */}
-
               <div 
                 className="drop-zone-stamp" 
                 onClick={() => document.getElementById('stamp-input').click()}
@@ -564,7 +565,7 @@ const ScannerTerminal = () => {
                   accept="image/*" 
                   webkitdirectory="" 
                   directory="" 
-                  onChange={(e) => setStampingFiles(Array.from(e.target.files).filter(f => f.type.startsWith('image/')))} 
+                  onChange={(e) => e.target.files && setStampingFiles(Array.from(e.target.files).filter(f => f.type.startsWith('image/')))} 
                   hidden 
                 />
                 {stampingFiles.length === 0 ? (
@@ -575,7 +576,7 @@ const ScannerTerminal = () => {
                 ) : (
                   <div onClick={(e) => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <p style={{ margin: 0, fontSize: '11px', color: '#10b981', fontWeight: 'bold' }}>✅ {stampingFiles.length} photos ready</p>
+                      <p style={{ margin: 0, fontSize: '11px', color: '#10b981', fontWeight: 'bold' }}>✅ {stampingFiles.length} fotos listas</p>
                       <button 
                         onClick={() => { setStampingFiles([]); setDateStamp(""); }} 
                         style={{ background: '#ef4444', color: 'white', border: 'none', borderRadius: '50%', width: '16px', height: '16px', fontSize: '9px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}
@@ -586,7 +587,7 @@ const ScannerTerminal = () => {
                     </div>
                     <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
                       <input type="date" value={dateStamp} onChange={(e) => setDateStamp(e.target.value)} style={{ fontSize: '11px', border: '1px solid #ddd', borderRadius: '4px', padding: '2px 4px' }} />
-                      <button className="btn-platform" onClick={handleGenerateStamps} disabled={!dateStamp || loading} style={{ padding: '4px 10px', fontSize: '11px', background: '#10b981' }}>Stamp</button>
+                      <button className="btn-platform" onClick={handleGenerateStamps} disabled={!dateStamp || loading} style={{ padding: '4px 10px', fontSize: '11px', background: '#10b981' }}>Estampar</button>
                     </div>
                   </div>
                 )}
@@ -614,7 +615,7 @@ const ScannerTerminal = () => {
                   opacity: accessMode === 'full' ? 1 : 0.4,
                   display: 'flex',          
                   alignItems: 'center', 
-                  gap: '1px',              
+                  gap: '4px',              
                   padding: '6px 14px',
                   fontSize: '13px'
                 }}
@@ -636,7 +637,9 @@ const ScannerTerminal = () => {
 
           {loading && (
             <div className="progress-wrapper" style={{ marginBottom: '25px' }}>
-              <div className="progress-track"><div className="progress-fill" style={{ width: `${(progress.current/progress.total)*100}%` }}></div></div>
+              <div className="progress-track">
+                <div className="progress-fill" style={{ width: `${(progress.current / Math.max(progress.total, 1)) * 100}%` }}></div>
+              </div>
               <div className="progress-text">Procesando: {progress.current}/{progress.total}</div>
             </div>
           )}
@@ -721,19 +724,30 @@ const ScannerTerminal = () => {
                     <thead><tr><th>Foto</th><th>ID Detectado</th><th>Ubicación</th></tr></thead>
                     <tbody>
                       {results.map((res, i) => (
-                        <tr key={i}>
+                        <tr key={res.idDexie || i}>
                           <td>
-                            <img 
-                              src={res.thumb} 
-                              onClick={() => handleOpenHighRes(res.originalFile)}
-                              style={{ width: '55px', height: '55px', objectFit: 'cover', borderRadius: '10px', border: '1px solid #e2e8f0', cursor: 'pointer' }} 
-                              alt="thumb" 
-                              title="Haz clic para ver la imagen original en alta resolución"
-                            />
+                            {res.originalFile ? (
+                              <img 
+                                src={res.thumb} 
+                                onClick={() => handleOpenHighRes(res.originalFile)}
+                                style={{ width: '55px', height: '55px', objectFit: 'cover', borderRadius: '10px', border: '1px solid #e2e8f0', cursor: 'pointer' }} 
+                                alt="thumb" 
+                                title="Haz clic para ver la imagen original en alta resolución"
+                              />
+                            ) : (
+                              <img 
+                                src={res.thumb} 
+                                style={{ width: '55px', height: '55px', objectFit: 'cover', borderRadius: '10px', border: '1px solid #e2e8f0', opacity: 0.8 }} 
+                                alt="thumb" 
+                                title="Imagen sincronizada de la sesión previa"
+                              />
+                            )}
                           </td>
-                          <td style={{ color: res.isFound ? '#1e293b' : '#e67e22', fontWeight: '700', fontSize: '13px' }}>{res.id}</td>
+                          <td style={{ color: res.isFound ? '#1e293b' : '#e67e22', fontWeight: '700', fontSize: '13px' }}>
+                            {res.idDetectado || res.id}
+                          </td>
                           <td>
-                            <div style={{ fontSize: '12px', fontWeight: '600', color: '#1e293b'}}>{res.masterInfo?.UBICACION}</div>
+                            <div style={{ fontSize: '12px', fontWeight: '600', color: '#1e293b' }}>{res.masterInfo?.UBICACION}</div>
                             <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
                               {res.masterInfo?.DISPOSITIVO} {res.sistemaAsignado && `[${res.sistemaAsignado}]`}
                             </div>
