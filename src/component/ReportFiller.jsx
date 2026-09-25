@@ -135,7 +135,7 @@ const ReportFiller = ({ results, type, templatePath, className, system = 'GENERA
                 img.src = srcData;
                 img.onload = () => {
                     const canvas = document.createElement('canvas');
-                    const MAX_WIDTH = 500; 
+                    const MAX_WIDTH = 1080; 
                     const scale = img.width > MAX_WIDTH ? MAX_WIDTH / img.width : 1;
                     canvas.width = img.width * scale;
                     canvas.height = img.height * scale;

@@ -1,20 +1,21 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import * as XLSX from 'xlsx';
 import ReportFiller from './ReportFiller';
 import AccessGatekeeper from './AccessGatekeeper'; 
 import ReportSystemsManager from './ReportSystemsManager';
+import { db } from '../db/db';
+//import { inject200MockPhotos } from '../utils/simulateMockData'; 
 import '../styles/ScannerTerminal.css';
 
-// IMPORTACIÓN: Asegúrate de que el logo esté en la ruta correcta.
 import logoJCI from '../assets/logoJCIcompleto.png';
 import excelIcon from '../assets/excel.png';
 
 const ScannerTerminal = () => {
   // --- ESTADOS DE CONTROL DE ACCESO ---
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [accessMode, setAccessMode] = useState(null); // 'full' o 'watermark'
+  const [accessMode, setAccessMode] = useState(null); 
 
   // --- ESTADOS ---
   const [loading, setLoading] = useState(false);
@@ -27,56 +28,98 @@ const ScannerTerminal = () => {
   const [stampingFiles, setStampingFiles] = useState([]);
   const [lotePendiente, setLotePendiente] = useState(null);
 
-  // --- EFECTOS ---
+  // Registro de URLs creadas para limpiarlas en memoria al desmontar/limpiar
+  const createdBlobUrls = useRef([]);
+
+  const trackBlobUrl = (url) => {
+    createdBlobUrls.current.push(url);
+    return url;
+  };
+
+  const clearBlobUrls = () => {
+    createdBlobUrls.current.forEach(url => URL.revokeObjectURL(url));
+    createdBlobUrls.current = [];
+  };
+
+  useEffect(() => {
+    return () => {
+      clearBlobUrls();
+    };
+  }, []);
+
+  // Carga inicial de datos previos almacenados en Dexie al montar el componente
+  useEffect(() => {
+    const syncFromDexie = async () => {
+      try {
+        const localData = await db.resultadosOCR.toArray();
+        if (localData && localData.length > 0) {
+          setResults(localData);
+        }
+      } catch (err) {
+        console.error("Error al sincronizar desde IndexedDB:", err);
+      }
+    };
+    syncFromDexie();
+  }, []);
+
+  /*// --- FUNCION PARA EJECUTAR EL SIMULADOR ---
+  const handleSimularDatos = async () => {
+    setLoading(true);
+    try {
+      console.log("Iniciando inyección de datos simulados...");
+      await inject200MockPhotos();
+      const localData = await db.resultadosOCR.toArray();
+      setResults(localData);
+      console.log("¡200 fotos simuladas inyectadas con éxito!");
+    } catch (err) {
+      console.error("Error al inyectar simulaciones:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Asignar explicitamente a window en el montaje para evitar Uncaught TypeError
+  useEffect(() => {
+    window.simularFotos = handleSimularDatos;
+    return () => {
+      delete window.simularFotos;
+    };
+  }, []);*/
+
+  // --- EFECTOS DE CARGA DE BASE DE DATOS MASTER ---
   useEffect(() => {
     if (isAuthenticated && accessMode === 'full') {
       const loadMasterData = async () => {
         try {
-          console.log("Iniciando carga de las 3 bases de datos (SACS, CCTV, FADS)...");
-          
           const urls = [
             '/SQL_sacs_backend.json',
             '/SQL_cctv_backend.json',
             '/SQL_fads_oficial_backend.json'
           ];
           
-          const results = await Promise.allSettled(urls.map(url => fetch(url)));
-          
+          const resultsData = await Promise.allSettled(urls.map(url => fetch(url)));
           let combinedData = [];
-          let loadedCount = 0;
 
-          for (let i = 0; i < results.length; i++) {
-            const resStatus = results[i];
-            const url = urls[i];
-
+          for (let i = 0; i < resultsData.length; i++) {
+            const resStatus = resultsData[i];
             if (resStatus.status === 'fulfilled' && resStatus.value.ok) {
               try {
                 const data = await resStatus.value.json();
-                if (Array.isArray(data)) {
-                  combinedData = [...combinedData, ...data];
-                  loadedCount++;
-                  console.log(`✅ Cargado con éxito: ${url} (${data.length} registros)`);
-                } else {
-                  console.warn(`⚠️ El archivo ${url} no contiene un array válido.`);
-                }
+                if (Array.isArray(data)) combinedData = [...combinedData, ...data];
               } catch (parseErr) {
-                console.error(`❌ Error al procesar el formato JSON de ${url}:`, parseErr);
+                console.error(`Error JSON:`, parseErr);
               }
-            } else {
-              console.error(`❌ No se pudo conectar o encontrar el archivo: ${url}`);
             }
           }
 
           if (combinedData.length > 0) {
             setDbData(combinedData);
             setDbReady(true);
-            console.log(`🚀 Base de datos unificada lista. Total registros en memoria: ${combinedData.length} (Origen: ${loadedCount}/3 archivos).`);
           } else {
-            throw new Error("Ninguno de los 3 archivos JSON pudo ser cargado o mapeado.");
+            throw new Error("No se cargó ninguna base de datos.");
           }
-
         } catch (err) {
-          console.error("Error crítico en el ecosistema de almacenamiento local:", err);
+          console.error("Error cargando BD:", err);
           setDbReady(false);
         }
       };
@@ -85,44 +128,44 @@ const ScannerTerminal = () => {
     }
   }, [isAuthenticated, accessMode]);
 
-  // --- MANEJADOR RETORNO DE AUTENTICACIÓN ---
   const handleAccessGranted = (mode) => {
     setAccessMode(mode);
     setIsAuthenticated(true);
   };
 
-  // --- MANEJADOR DRAG & DROP PARA MARCA DE AGUA ---
   const handleWatermarkDrop = (e) => {
     e.preventDefault();
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       const droppedFiles = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
-      if (droppedFiles.length > 0) {
-        setStampingFiles(droppedFiles);
-      }
+      if (droppedFiles.length > 0) setStampingFiles(droppedFiles);
     }
   };
 
-  // --- FUNCIÓN PARA LIMPIAR EL TOTAL DE LAS FOTOS ANALIZADAS ---
-  const clearAllAnalyzedData = () => {
+  const clearAllAnalyzedData = async () => {
+    clearBlobUrls();
     setResults([]);
     setErrors([]);
     setLotePendiente(null);
     setProgress({ current: 0, total: 0 });
+    
+    try {
+      await db.resultadosOCR.clear();
+    } catch (err) {
+      console.error("Error al borrar Dexie DB:", err);
+    }
+
     const fileInput = document.getElementById('file-input');
     if (fileInput) fileInput.value = "";
   };
 
-  // --- UTILIDADES DE PROCESAMIENTO ---
   const normalizeId = (id) => {
     if (!id) return "";
-    let clean = id.toString().toUpperCase().trim();
-    return clean.replace(/P0+/g, 'P').replace(/L0+/g, 'L');
+    return id.toString().toUpperCase().trim().replace(/P0+/g, 'P').replace(/L0+/g, 'L');
   };
 
   const getSimilarityScore = (str1, str2) => {
     const s1 = str1.toUpperCase().replace(/[^A-Z0-9]/g, '');
     const s2 = str2.toUpperCase().replace(/[^A-Z0-9]/g, '');
-    
     if (s1 === s2) return 100;
     if (!s1 || !s2) return 0;
 
@@ -140,7 +183,6 @@ const ScannerTerminal = () => {
         );
       }
     }
-    
     const distance = track[s2.length][s1.length];
     const maxLength = Math.max(s1.length, s2.length);
     return ((maxLength - distance) / maxLength) * 100;
@@ -182,9 +224,8 @@ const ScannerTerminal = () => {
     });
 
     if (bestMatch && highestScore >= UMBRAL_MINIMO) {
-      const finalDbId = bestMatch.ID_PUERTA || bestMatch.ID || bestMatch.id || bestMatch.CODIGO;
       return {
-        ID: finalDbId,
+        ID: bestMatch.ID_PUERTA || bestMatch.ID || bestMatch.id || bestMatch.CODIGO,
         DISPOSITIVO: bestMatch.TIPO_DE_EQUIPO || bestMatch.TIPO || bestMatch.tipo || bestMatch.DISPOSITIVO || "DISPOSITIVO",
         UBICACION: bestMatch.UBICACION || bestMatch.ubicacion || bestMatch.ZONA || "N/A",
         score: highestScore
@@ -202,19 +243,21 @@ const ScannerTerminal = () => {
         img.src = e.target.result;
         img.onload = () => {
           const canvas = document.createElement('canvas');
-          const MAX_WIDTH = 1200;
+          const MAX_WIDTH = 1920; 
           let width = img.width;
           let height = img.height;
+
           if (width > MAX_WIDTH) {
             height *= MAX_WIDTH / width;
             width = MAX_WIDTH;
           }
+
           canvas.width = width;
           canvas.height = height;
           const ctx = canvas.getContext('2d');
-          ctx.filter = 'contrast(1.2) brightness(1.0)';
+          ctx.filter = 'contrast(1.1) brightness(1.0)';
           ctx.drawImage(img, 0, 0, width, height);
-          canvas.toBlob((blob) => resolve(blob), 'image/jpeg', 0.8);
+          canvas.toBlob((blob) => resolve(blob), 'image/jpeg', 0.85);
         };
       };
     });
@@ -237,29 +280,33 @@ const ScannerTerminal = () => {
     });
 
     if (!response.ok) {
-      const errData = await response.json().catch(() => ({}));
-      console.error("Error detallado devuelto por Netlify Function:", errData);
-      throw new Error(`Error en Netlify Serverless (${response.status})`);
+      throw new Error(`Error en servidor OCR (${response.status})`);
     }
 
     const data = await response.json();
     const detectedText = data.text || data.detectedText || data.id;
     if (!detectedText || detectedText.toUpperCase().includes("ERROR")) {
-      throw new Error("La IA no devolvió caracteres legibles.");
+      throw new Error("No se detectaron caracteres legibles.");
     }
 
     return detectedText.trim();
   };
 
-  const asignarLoteASistema = (sistemaElegido) => {
+  const asignarLoteASistema = async (sistemaElegido) => {
     if (!lotePendiente) return;
-    
-    // Mapeamos los elementos del lote agregándoles el sistema elegido
     const loteConSistema = lotePendiente.map(foto => ({ ...foto, sistemaAsignado: sistemaElegido }));
     
-    // Actualizamos results reemplazando o anexando los elementos con su respectivo sistema asignado
+    try {
+      for (const item of loteConSistema) {
+        if (item.idDexie) {
+          await db.resultadosOCR.update(item.idDexie, { sistemaAsignado: sistemaElegido });
+        }
+      }
+    } catch (err) {
+      console.error("Error al actualizar sistema en Dexie:", err);
+    }
+
     setResults(prev => {
-      // Filtramos para remover las versiones sin sistema que ya agregamos en processImages
       const nombresLote = new Set(lotePendiente.map(f => f.fileName));
       const prevFiltrado = prev.filter(res => !nombresLote.has(res.fileName));
       return [...prevFiltrado, ...loteConSistema];
@@ -280,8 +327,8 @@ const ScannerTerminal = () => {
     const currentErrors = [];
     let completedCount = 0;
 
-    const CONCURRENCY_LIMIT = 6; 
-    const MAX_RETRIES = 3;      
+    const CONCURRENCY_LIMIT = 3; 
+    const MAX_RETRIES = 2;      
 
     const pool = files.map((file, index) => ({ file, index }));
 
@@ -291,9 +338,8 @@ const ScannerTerminal = () => {
         if (!task) break;
 
         const { file } = task;
-        const thumbUrl = URL.createObjectURL(file);
-        let currentDelay = 3000; 
-        let success = false;
+        const thumbUrl = trackBlobUrl(URL.createObjectURL(file));
+        let currentDelay = 2000; 
 
         for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
           try {
@@ -301,30 +347,33 @@ const ScannerTerminal = () => {
             const detectedId = await analyzeWithGemini(compressedBlob);
             const finalId = detectedId.toUpperCase().trim(); 
             const masterInfo = queryMaster(finalId); 
-                          
-            currentResults.push({
+            
+            const itemResultado = {
               id: finalId, 
+              idDetectado: finalId,
               fileName: file.name,
-              originalFile: file,
               thumb: thumbUrl,
               isFound: !!masterInfo,
               masterInfo: masterInfo || { ID: finalId, DISPOSITIVO: "N/A", UBICACION: "No encontrado en Base de Datos" },
-              sistemaAsignado: null // Por defecto inicia sin sistema
-            });
-            
-            success = true;
+              sistemaAsignado: null,
+              fechaGuardado: new Date().toISOString()
+            };
+
+            const idDexie = await db.resultadosOCR.add(itemResultado);
+            itemResultado.idDexie = idDexie;
+            itemResultado.originalFile = file;
+
+            currentResults.push(itemResultado);
             break; 
 
           } catch (err) {
-            console.warn(`⚠️ [Intento ${attempt}/${MAX_RETRIES}] Falló la foto ${file.name}: ${err.message}`);
-            
             if (attempt < MAX_RETRIES) {
               await new Promise(resolve => setTimeout(resolve, currentDelay));
               currentDelay *= 2; 
             } else {
               currentErrors.push({ 
                 fileName: file.name, 
-                reason: err.message || "Agotó los intentos de conexión.", 
+                reason: err.message || "Error al procesar la imagen.", 
                 thumb: thumbUrl 
               });
               setErrors([...currentErrors]);
@@ -343,11 +392,9 @@ const ScannerTerminal = () => {
 
     await Promise.all(workers);
     
-    // 🌟 AQUÍ ESTÁ EL CAMBIO CLAVE:
-    // Cargamos los resultados de inmediato al estado global 'results' para que se revelen en la tabla
     if (currentResults.length > 0) {
       setResults(prev => [...prev, ...currentResults]);
-      setLotePendiente(currentResults); // Mantenemos el lote aquí para habilitar la caja de selección simultánea
+      setLotePendiente(currentResults);
     }
 
     setLoading(false);
@@ -417,9 +464,7 @@ const ScannerTerminal = () => {
   const downloadExcel = () => {
     const uniqueResultsMap = new Map();
     results.forEach(res => {
-      if (!uniqueResultsMap.has(res.id)) {
-        uniqueResultsMap.set(res.id, res);
-      }
+      if (!uniqueResultsMap.has(res.id)) uniqueResultsMap.set(res.id, res);
     });
 
     const uniqueResultsArray = Array.from(uniqueResultsMap.values());
@@ -441,11 +486,19 @@ const ScannerTerminal = () => {
   const downloadZip = async () => {
     const zip = new JSZip();
     results.forEach(res => {
-      const folderName = res.id.replace(/\//g, '_');
-      zip.folder(folderName).file(res.fileName, res.originalFile);
+      if (res.originalFile) {
+        const folderName = res.id.replace(/\//g, '_');
+        zip.folder(folderName).file(res.fileName, res.originalFile);
+      }
     });
     const content = await zip.generateAsync({ type: "blob" });
     saveAs(content, "Fotos_FADS_Organizadas.zip");
+  };
+
+  const handleOpenHighRes = (file) => {
+    if (!file) return;
+    const fullUrl = URL.createObjectURL(file);
+    window.open(fullUrl, '_blank');
   };
 
   return (
@@ -476,6 +529,26 @@ const ScannerTerminal = () => {
               >
                 📁 Cargar carpeta
               </button>
+
+              {/* BOTÓN DEL SIMULADOR 
+              {accessMode === 'full' && (
+                <button 
+                  className="btn-platform" 
+                  onClick={handleSimularDatos} 
+                  disabled={loading}
+                  style={{ 
+                    background: '#8b5cf6', 
+                    color: '#ffffff', 
+                    padding: '8px 18px',
+                    fontWeight: 'bold',
+                    cursor: 'pointer'
+                  }}
+                  title="Inyecta 200 fotos de prueba directamente en IndexedDB"
+                >
+                  🧪 Simular 200 Fotos
+                </button>
+              )}
+              */}
 
               <div 
                 className="drop-zone-stamp" 
@@ -568,7 +641,6 @@ const ScannerTerminal = () => {
             </div>
           )}
 
-          {/* 🌟 BLOQUE DE ASIGNACIÓN FLOTANTE / OPCIONAL */}
           {lotePendiente && (
             <div style={{ 
               background: '#f0f7ff', 
@@ -601,8 +673,6 @@ const ScannerTerminal = () => {
                   borderRadius: '9px',
                   transition: 'all 0.2s ease'
                 }}
-                onMouseEnter={(e) => e.target.style.background = '#fca5a56c'}
-                onMouseLeave={(e) => e.target.style.background = '#fca5a534'}
               >
                 No registrar
               </button>
@@ -636,7 +706,7 @@ const ScannerTerminal = () => {
                     zIndex: 10,
                     transition: 'all 0.2s ease'
                   }}
-                  title="Limpiar todas las fotos analizadas"
+                  title="Limpiar todas las fotos analizadas y liberar memoria local"
                 >
                   ✕
                 </button>
@@ -652,7 +722,15 @@ const ScannerTerminal = () => {
                     <tbody>
                       {results.map((res, i) => (
                         <tr key={i}>
-                          <td><img src={res.thumb} style={{ width: '55px', height: '55px', objectFit: 'cover', borderRadius: '10px', border: '1px solid #e2e8f0' }} alt="thumb" /></td>
+                          <td>
+                            <img 
+                              src={res.thumb} 
+                              onClick={() => handleOpenHighRes(res.originalFile)}
+                              style={{ width: '55px', height: '55px', objectFit: 'cover', borderRadius: '10px', border: '1px solid #e2e8f0', cursor: 'pointer' }} 
+                              alt="thumb" 
+                              title="Haz clic para ver la imagen original en alta resolución"
+                            />
+                          </td>
                           <td style={{ color: res.isFound ? '#1e293b' : '#e67e22', fontWeight: '700', fontSize: '13px' }}>{res.id}</td>
                           <td>
                             <div style={{ fontSize: '12px', fontWeight: '600', color: '#1e293b'}}>{res.masterInfo?.UBICACION}</div>
@@ -708,9 +786,6 @@ const ScannerTerminal = () => {
             <div style={{ textAlign: 'center', padding: '40px', border: '2px dashed #cbd5e1', borderRadius: '12px', background: '#f8fafc' }}>
               <p style={{ fontSize: '14px', color: '#64748b', margin: 0, fontWeight: '500' }}>
                 🔒 El acceso para usar el analizador y generador de informes está restringido para tu perfil.
-              </p>
-              <p style={{ fontSize: '12px', color: '#94a3b8', marginTop: '5px' }}>
-                Usa la herramienta de marca de agua y fecha para procesar tus imágenes de inspección.
               </p>
             </div>
           )}
