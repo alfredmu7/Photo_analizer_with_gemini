@@ -23,7 +23,7 @@
     right: 0 !important; 
     bottom: 0 !important;
     width: 100vw !important;
-    height: 100vh !important;
+    height: 100% !important;
     background: rgba(15, 23, 42, 0.65);
     
     z-index: 99999 !important; /* Prioridad máxima por sobre layouts externos */
@@ -36,7 +36,7 @@
     padding: 25px;
     border-radius: 24px;
     width: 95vw !important; /* Usa el ancho de la pantalla directamente */
-    max-width: 900px !important;
+    max-width: 95% !important;
     
     /* Limitadores estrictos de altura */
     height: 85vh !important;
@@ -533,3 +533,4 @@
     height: 35px;
     align-self: center;
 }
+

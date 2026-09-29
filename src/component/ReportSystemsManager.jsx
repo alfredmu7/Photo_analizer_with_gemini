@@ -29,6 +29,9 @@ const ReportSystemsManager = ({ resultadosOCR = [], lotePendiente, asignarLoteAS
     // 1. FILTRADO AUTOMÁTICO POR NOMENCLATURA
     const filtrarPorNomenclatura = (sistema) => {
         if (!Array.isArray(resultadosOCR) || resultadosOCR.length === 0) return [];
+        // O si prefieres una regla más estricta (ej. que contenga un prefijo exacto completo):
+        return [];
+    /*
         switch (sistema) {
             case 'CCTV':
                 return resultadosOCR.filter(r => getIdValue(r).startsWith('C'));
@@ -37,10 +40,9 @@ const ReportSystemsManager = ({ resultadosOCR = [], lotePendiente, asignarLoteAS
             case 'FADS':
                 return resultadosOCR.filter(r => getIdValue(r).startsWith('F') || getIdValue(r).startsWith('M'));
             default:
-                return [];
         }
+        */
     };
-
     // 2. LÓGICA DE OBTENCIÓN DE RESULTADOS
     const obtenerResultadosParaSistema = (sistema) => {
         if (!Array.isArray(resultadosOCR)) return [];

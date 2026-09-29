@@ -3,6 +3,7 @@ import PizZip from 'pizzip';
 import Docxtemplater from 'docxtemplater';
 import ImageModule from 'docxtemplater-image-module-free'; 
 import { saveAs } from 'file-saver';
+import ReportItemList from './ReportItemList';
 import logoJCI from '../assets/logoJCIcompleto.png';
 import '../styles/ReportFiller.css'; 
 
@@ -328,6 +329,7 @@ const ReportFiller = ({ results, type, templatePath, className, system = 'GENERA
                 <div className="report-modal-overlay">
                     <div className="report-modal-content">
                         
+                        {/* CABECERA DEL MODAL */}
                         <div className="report-modal-header" style={{ display: 'flex', flexDirection: 'column', gap: '10px', borderBottom: '1px solid #e2e8f0', paddingBottom: '12px' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
                                 <h3 style={{ margin: 0 }}>Asignación: {type}</h3>
@@ -361,7 +363,7 @@ const ReportFiller = ({ results, type, templatePath, className, system = 'GENERA
                                             }} 
                                         />
                                         {history.length > 0 && (
-                                            <span style={{ fontSize: '10px', color: '#b1b1b1', fontWeight: '400' }}>
+                                            <span style={{ fontSize: '10px', color: '#b1b1b1', fontWeight: '400', marginLeft: '2px' }}>
                                                 {history.length}
                                             </span>
                                         )}
@@ -369,7 +371,7 @@ const ReportFiller = ({ results, type, templatePath, className, system = 'GENERA
                                 </div>
                             </div>
 
-                            {/* BARRA DE FILTRADO CON EL BOTÓN INTEGRADO ABAJO A LA DERECHA */}
+                            {/* BARRA DE FILTRADO */}
                             <div style={{ width: '100%', position: 'relative', display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                 <div style={{ width: '100%', position: 'relative' }}>
                                     <input 
@@ -403,7 +405,6 @@ const ReportFiller = ({ results, type, templatePath, className, system = 'GENERA
                                         Mostrando {filteredData.length} de {previewData.length} ítems
                                     </span>
 
-                                    {/* BOTÓN MINIMALISTA UBICADO EN LA LÍNEA SOLICITADA */}
                                     {previewData.length > 0 && (
                                         <button
                                             type="button"
@@ -437,114 +438,26 @@ const ReportFiller = ({ results, type, templatePath, className, system = 'GENERA
                             </div>
                         </div>
 
-                        <div className="report-modal-table-container">
-                            {filteredData.length > 0 ? (
-                                filteredData.map((row) => {
-                                    const radioGroupKey = `ids-${row.idOriginal}`;
-                                    
-                                    return (
-                                        <div key={row.idOriginal} className="report-dispositivo-block" style={{ position: 'relative' }}>
-                                            
-                                            <button 
-                                                type="button"
-                                                onClick={() => handleRemoveItem(row.idOriginal)}
-                                                style={{
-                                                    position: 'absolute', top: '8px', right: '8px', background: 'transparent', color: '#94a3b8', border: 'none', fontSize: '16px', cursor: 'pointer', fontWeight: 'bold'
-                                                }}
-                                                title="Eliminar este ID"
-                                            >
-                                                ×
-                                            </button>
+                        {/* COMPONENTE HIJO CON LA LISTA PAGINADA */}
+                        <ReportItemList 
+                            filteredData={filteredData}
+                            previewData={previewData}
+                            handleRemoveItem={handleRemoveItem}
+                            handleIdSelection={handleIdSelection}
+                            handleDateChange={handleDateChange}
+                            handleRoleChange={handleRoleChange}
+                            setPreviewData={setPreviewData}
+                            searchTerm={searchTerm}
+                        />
 
-                                            <div className="report-info-col">
-                                                <div className="report-id-selector-container">
-                                                    <div className="report-pill-wrapper">
-                                                        <label className={`report-pill-label ${row.idSeleccionado === row.idAntes ? 'active-antes' : ''}`}>
-                                                            <input 
-                                                                type="radio" 
-                                                                name={radioGroupKey} 
-                                                                checked={row.idSeleccionado === row.idAntes} 
-                                                                onChange={() => handleIdSelection(row.idOriginal, row.idAntes)} 
-                                                            />
-                                                            A: {row.idAntes}
-                                                        </label>
-                                                        <label className={`report-pill-label ${row.idSeleccionado === row.idDespues ? 'active-despues' : ''}`}>
-                                                            <input 
-                                                                type="radio" 
-                                                                name={radioGroupKey} 
-                                                                checked={row.idSeleccionado === row.idDespues} 
-                                                                onChange={() => handleIdSelection(row.idOriginal, row.idDespues)} 
-                                                            />
-                                                            D: {row.idDespues}
-                                                        </label>
-                                                        <input 
-                                                            type="text" 
-                                                            value={row.idSeleccionado} 
-                                                            onChange={(e) => {
-                                                                const val = e.target.value;
-                                                                setPreviewData(prev => prev.map(r => r.idOriginal === row.idOriginal ? { ...r, idSeleccionado: val } : r));
-                                                            }} 
-                                                            onBlur={(e) => handleIdSelection(row.idOriginal, e.target.value)}
-                                                            onKeyDown={(e) => {
-                                                                if (e.key === 'Enter') handleIdSelection(row.idOriginal, e.target.value);
-                                                            }}
-                                                            className="report-manual-input" 
-                                                        />
-                                                    </div>
-                                                </div>
-                                                <div style={{ paddingRight: '25px' }}><b>Ubicación:</b> {row.ubi}</div>
-                                                <input 
-                                                    type="date" 
-                                                    value={row.fecha} 
-                                                    className="report-date-input" 
-                                                    onChange={(e) => handleDateChange(row.idOriginal, e.target.value)} 
-                                                />
-                                            </div>
-                                            
-                                            {/* MINIATURAS DEL TAMAÑO EXACTO DEL CUADRO */}
-                                            <div className="report-grid-fotos">
-                                                {row.fotos.map((foto, fotoIdx) => (
-                                                    <div key={fotoIdx} className="report-foto-item">
-                                                        {foto.blobData ? (
-                                                            <img 
-                                                                src={foto.blobData} 
-                                                                alt="Preview" 
-                                                                className="report-img-thumbnail" 
-                                                                style={{ width: '55px', height: '55px', objectFit: 'cover', borderRadius: '4px', display: 'block', border: '1px solid #ccc' }}
-                                                            />
-                                                        ) : (
-                                                            <div className="report-img-thumbnail" style={{ width: '55px', height: '55px', background: '#e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', color: '#64748b', borderRadius: '4px' }}>
-                                                                Sin imagen
-                                                            </div>
-                                                        )}
-                                                        <select 
-                                                            className="report-select-rol" 
-                                                            value={foto.rol} 
-                                                            onChange={(e) => handleRoleChange(row.idOriginal, fotoIdx, e.target.value)}
-                                                            style={{ fontSize: '11px', marginTop: '2px', width: '65px' }}
-                                                        >
-                                                            <option value="antes">Antes</option>
-                                                            <option value="despues">Después</option>
-                                                            <option value="ninguno">Omitir</option>
-                                                        </select>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    );
-                                })
-                            ) : (
-                                <div style={{ textAlign: 'center', padding: '30px', color: '#64748b', fontSize: '14px' }}>
-                                    Oops! No veo un ID {searchTerm}
-                                </div>
-                            )}
-                        </div>
+                        {/* ACCIONES DEL MODAL */}
                         <div className="report-modal-actions">
                             <button onClick={() => setShowModal(false)} className="report-btn-cancel">Cerrar</button>
                             <button onClick={generateFinalReport} className="report-btn-confirm" disabled={isProcessing || previewData.length === 0}>
                                 {isProcessing ? "Procesando..." : "Generar informe"}
                             </button>
                         </div>
+
                     </div>
                 </div>
             )}

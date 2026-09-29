@@ -3,7 +3,7 @@ import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import * as XLSX from 'xlsx';
 import ReportFiller from './ReportFiller';
-import AccessGatekeeper from './AccessGatekeeper'; 
+import AccessGatekeeper from './AccessGatekeeper';
 import ReportSystemsManager from './ReportSystemsManager';
 import { db } from '../db/db';
 import '../styles/ScannerTerminal.css';
@@ -14,7 +14,7 @@ import excelIcon from '../assets/excel.png';
 const ScannerTerminal = () => {
   // --- ESTADOS DE CONTROL DE ACCESO ---
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [accessMode, setAccessMode] = useState(null); 
+  const [accessMode, setAccessMode] = useState(null);
 
   // --- ESTADOS ---
   const [loading, setLoading] = useState(false);
@@ -26,6 +26,10 @@ const ScannerTerminal = () => {
   const [dateStamp, setDateStamp] = useState("");
   const [stampingFiles, setStampingFiles] = useState([]);
   const [lotePendiente, setLotePendiente] = useState(null);
+
+  // --- ESTADO DE PAGINACIÓN PARA DISPOSITIVOS DETECTADOS ---
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 5;
 
   const createdBlobUrls = useRef([]);
 
@@ -75,7 +79,7 @@ const ScannerTerminal = () => {
             '/SQL_cctv_backend.json',
             '/SQL_fads_oficial_backend.json'
           ];
-          
+
           const resultsData = await Promise.allSettled(urls.map(url => fetch(url)));
           let combinedData = [];
 
@@ -125,7 +129,8 @@ const ScannerTerminal = () => {
     setErrors([]);
     setLotePendiente(null);
     setProgress({ current: 0, total: 0 });
-    
+    setCurrentPage(1);
+
     try {
       await db.resultadosOCR.clear();
     } catch (err) {
@@ -164,7 +169,7 @@ const ScannerTerminal = () => {
   const queryMaster = (detectedId) => {
     if (!dbData.length || !detectedId) return null;
     const searchClean = detectedId.toUpperCase().trim();
-    
+
     const exactMatch = dbData.find(item => {
       const dbIdRaw = item.ID_PUERTA || item.ID || item.id || item.CODIGO || item.ID_DISPOSITIVO;
       if (!dbIdRaw) return false;
@@ -219,7 +224,7 @@ const ScannerTerminal = () => {
         img.src = e.target.result;
         img.onload = () => {
           const canvas = document.createElement('canvas');
-          const MAX_WIDTH = 1920; 
+          const MAX_WIDTH = 1920;
           let width = img.width;
           let height = img.height;
 
@@ -268,12 +273,10 @@ const ScannerTerminal = () => {
     return detectedText.trim();
   };
 
-  // --- ASIGNACIÓN DE LOTE A SISTEMA SELECCIONADO ---
   const asignarLoteASistema = async (sistemaElegido) => {
     if (!lotePendiente || lotePendiente.length === 0) return;
 
     try {
-      // 1. Actualizamos IndexedDB en segundo plano para persistencia
       await db.transaction('rw', db.resultadosOCR, async () => {
         for (const foto of lotePendiente) {
           if (foto.idDexie) {
@@ -282,7 +285,6 @@ const ScannerTerminal = () => {
         }
       });
 
-      // 2. Mapeamos el arreglo en memoria actualizando el sistema
       const idsPendientesDexie = new Set(lotePendiente.map(item => item.idDexie));
 
       setResults(prevResults => 
@@ -294,7 +296,6 @@ const ScannerTerminal = () => {
         })
       );
 
-      // 3. Limpiamos el banner del lote pendiente
       setLotePendiente(null);
 
     } catch (err) {
@@ -316,7 +317,7 @@ const ScannerTerminal = () => {
     let completedCount = 0;
 
     const CONCURRENCY_LIMIT = 3; 
-    const MAX_RETRIES = 2;       
+    const MAX_RETRIES = 2;          
 
     const pool = files.map((file, index) => ({ file, index }));
 
@@ -385,10 +386,11 @@ const ScannerTerminal = () => {
       .map(() => worker());
 
     await Promise.all(workers);
-    
+
     if (currentResults.length > 0) {
       setResults(prev => [...prev, ...currentResults]);
       setLotePendiente(currentResults);
+      setCurrentPage(1);
     }
 
     setLoading(false);
@@ -409,7 +411,7 @@ const ScannerTerminal = () => {
           canvas.height = img.height;
           const ctx = canvas.getContext('2d');
           ctx.drawImage(img, 0, 0);
-          
+
           const stampHeight = canvas.height * 0.15;
           const [year, month, day] = dateStr.split("-");
           const formattedDate = `${day}-${month}-${year.slice(-2)}`;
@@ -484,7 +486,7 @@ const ScannerTerminal = () => {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Resultados");
     XLSX.writeFile(wb, "Reporte_FADS.xlsx");
-  }; 
+  };
 
   const downloadZip = async () => {
     const zip = new JSZip();
@@ -521,6 +523,11 @@ const ScannerTerminal = () => {
     };
     reader.readAsDataURL(file);
   };
+
+  const totalPages = Math.ceil(results.length / itemsPerPage) || 1;
+  const indexOfLastItem = currentPage * itemsPerPage;
+  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
+  const currentResultsPage = results.slice(indexOfFirstItem, indexOfLastItem);
 
   return (
     <>
@@ -613,9 +620,9 @@ const ScannerTerminal = () => {
                   color: '#1e293b', 
                   border: '1px solid #e2e8f0', 
                   opacity: accessMode === 'full' ? 1 : 0.4,
-                  display: 'flex',          
+                  display: 'flex',        
                   alignItems: 'center', 
-                  gap: '4px',              
+                  gap: '4px',            
                   padding: '6px 14px',
                   fontSize: '13px'
                 }}
@@ -715,48 +722,134 @@ const ScannerTerminal = () => {
                 </button>
               )}
 
-              <div className="column-section" style={{ background: '#fff', borderRadius: '16px', padding: '20px', border: '1px solid #e2e8f0' }}>
-                <h3 style={{ fontSize: '15px', fontWeight: '700', color: '#0f172a', marginBottom: '15px' }}>
-                  Dispositivos detectados ({results.length})
-                </h3>
-                <div style={{ maxHeight: '600px', overflowY: 'auto', paddingRight: '10px' }}>
-                  <table className="data-table">
-                    <thead><tr><th>Foto</th><th>ID Detectado</th><th>Ubicación</th></tr></thead>
-                    <tbody>
-                      {results.map((res, i) => (
-                        <tr key={res.idDexie || i}>
-                          <td>
-                            {res.originalFile ? (
-                              <img 
-                                src={res.thumb} 
-                                onClick={() => handleOpenHighRes(res.originalFile)}
-                                style={{ width: '55px', height: '55px', objectFit: 'cover', borderRadius: '10px', border: '1px solid #e2e8f0', cursor: 'pointer' }} 
-                                alt="thumb" 
-                                title="Haz clic para ver la imagen original en alta resolución"
-                              />
-                            ) : (
-                              <img 
-                                src={res.thumb} 
-                                style={{ width: '55px', height: '55px', objectFit: 'cover', borderRadius: '10px', border: '1px solid #e2e8f0', opacity: 0.8 }} 
-                                alt="thumb" 
-                                title="Imagen sincronizada de la sesión previa"
-                              />
-                            )}
-                          </td>
-                          <td style={{ color: res.isFound ? '#1e293b' : '#e67e22', fontWeight: '700', fontSize: '13px' }}>
-                            {res.idDetectado || res.id}
-                          </td>
-                          <td>
-                            <div style={{ fontSize: '12px', fontWeight: '600', color: '#1e293b' }}>{res.masterInfo?.UBICACION}</div>
-                            <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
-                              {res.masterInfo?.DISPOSITIVO} {res.sistemaAsignado && `[${res.sistemaAsignado}]`}
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+              <div className="column-section" style={{ background: '#fff', borderRadius: '16px', padding: '20px', border: '1px solid #e2e8f0', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                <div>
+                  <h3 style={{ fontSize: '15px', fontWeight: '700', color: '#0f172a', marginBottom: '15px' }}>
+                    Dispositivos detectados ({results.length})
+                  </h3>
+                  <div style={{ minHeight: '350px' }}>
+                    <table className="data-table">
+                      <thead><tr><th>Foto</th><th>ID Detectado</th><th>Ubicación</th></tr></thead>
+                      <tbody>
+                        {currentResultsPage.length > 0 ? (
+                          currentResultsPage.map((res, i) => (
+                            <tr key={res.idDexie || i}>
+                              <td>
+                                {res.originalFile ? (
+                                  <img 
+                                    src={res.thumb} 
+                                    onClick={() => handleOpenHighRes(res.originalFile)}
+                                    style={{ width: '55px', height: '55px', objectFit: 'cover', borderRadius: '10px', border: '1px solid #e2e8f0', cursor: 'pointer' }} 
+                                    alt="thumb" 
+                                    title="Haz clic para ver la imagen original en alta resolución"
+                                  />
+                                ) : (
+                                  <img 
+                                    src={res.thumb} 
+                                    style={{ width: '55px', height: '55px', objectFit: 'cover', borderRadius: '10px', border: '1px solid #e2e8f0', opacity: 0.8 }} 
+                                    alt="thumb" 
+                                    title="Imagen sincronizada de la sesión previa"
+                                  />
+                                )}
+                              </td>
+                              <td style={{ color: res.isFound ? '#1e293b' : '#e67e22', fontWeight: '700', fontSize: '13px' }}>
+                                {res.idDetectado || res.id}
+                              </td>
+                              <td>
+                                <div style={{ fontSize: '12px', fontWeight: '600', color: '#1e293b' }}>{res.masterInfo?.UBICACION}</div>
+                                <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
+                                  {res.masterInfo?.DISPOSITIVO} {res.sistemaAsignado && `[${res.sistemaAsignado}]`}
+                                </div>
+                              </td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td colSpan="3" style={{ textAlign: 'center', color: '#94a3b8', padding: '30px' }}>
+                              No hay dispositivos detectados aún.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
+
+                {totalPages > 1 && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '15px', paddingTop: '10px', borderTop: '1px solid #f1f5f9' }}>
+                    <button 
+                      onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                      disabled={currentPage === 1}
+                      onMouseEnter={(e) => {
+                        if (currentPage !== 1) {
+                          e.currentTarget.style.backgroundColor = '#f1f5f9';
+                          e.currentTarget.style.borderColor = '#94a3b8';
+                          e.currentTarget.style.color = '#0f172a';
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (currentPage !== 1) {
+                          e.currentTarget.style.backgroundColor = '#e2e8f0';
+                          e.currentTarget.style.borderColor = 'transparent';
+                          e.currentTarget.style.color = '#475569';
+                        }
+                      }}
+                      style={{ 
+                        fontFamily: "'Plus Jakarta Sans', sans-serif",
+                        background: '#e2e8f0',
+                        color: '#475569',
+                        border: 'transparent',
+                        padding: '7px 11px',
+                        borderRadius: '50px',
+                        fontWeight: 600,
+                        fontSize: '13px',
+                        cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
+                        opacity: currentPage === 1 ? 0.6 : 1,
+                        transition: 'all 0.3s ease'
+                      }}
+                    >
+                      Anterior
+                    </button>
+                    
+                    <span style={{ fontSize: '12px', color: '#64748b', fontWeight: '600' }}>
+                      Página {currentPage} de {totalPages}
+                    </span>
+
+                    <button 
+                      onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                      disabled={currentPage === totalPages}
+                      onMouseEnter={(e) => {
+                        if (currentPage !== totalPages) {
+                          e.currentTarget.style.backgroundColor = '#f1f5f9';
+                          e.currentTarget.style.borderColor = '#94a3b8';
+                          e.currentTarget.style.color = '#0f172a';
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (currentPage !== totalPages) {
+                          e.currentTarget.style.backgroundColor = '#e2e8f0';
+                          e.currentTarget.style.borderColor = 'transparent';
+                          e.currentTarget.style.color = '#475569';
+                        }
+                      }}
+                      style={{ 
+                        fontFamily: "'Plus Jakarta Sans', sans-serif",
+                        background: '#e2e8f0',
+                        color: '#475569',
+                        border: 'transparent',
+                        padding: '7px 11px',
+                        borderRadius: '50px',
+                        fontWeight: 600,
+                        fontSize: '13px',
+                        cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
+                        opacity: currentPage === totalPages ? 0.6 : 1,
+                        transition: 'all 0.3s ease'
+                      }}
+                    >
+                      Siguiente
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div className="column-section" style={{ background: '#fff', borderRadius: '16px', padding: '20px', border: '1px solid #e2e8f0' }}>
@@ -773,23 +866,31 @@ const ScannerTerminal = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {errors.map((err, i) => (
-                        <tr key={i}>
-                          <td>
-                            {err.thumb ? (
-                              <img src={err.thumb} style={{ width: '55px', height: '55px', objectFit: 'cover', borderRadius: '10px', border: '1px solid #fee2e2' }} alt="error thumb" />
-                            ) : (
-                              <div style={{ width: '55px', height: '55px', borderRadius: '10px', background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px' }}>⚠️</div>
-                            )}
-                          </td>
-                          <td style={{ fontSize: '11px', color: '#475569', fontWeight: '500', maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {err.fileName}
-                          </td>
-                          <td style={{ fontSize: '11px', color: '#ef4444', fontWeight: '600' }}>
-                            {err.reason}
+                      {errors.length > 0 ? (
+                        errors.map((err, i) => (
+                          <tr key={i}>
+                            <td>
+                              {err.thumb ? (
+                                <img src={err.thumb} style={{ width: '55px', height: '55px', objectFit: 'cover', borderRadius: '10px', border: '1px solid #fee2e2' }} alt="error thumb" />
+                              ) : (
+                                <div style={{ width: '55px', height: '55px', borderRadius: '10px', background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px' }}>⚠</div>
+                              )}
+                            </td>
+                            <td style={{ fontSize: '11px', color: '#475569', fontWeight: '500', maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {err.fileName}
+                            </td>
+                            <td style={{ fontSize: '11px', color: '#ef4444', fontWeight: '600' }}>
+                              {err.reason}
+                            </td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan="3" style={{ textAlign: 'center', color: '#94a3b8', padding: '30px' }}>
+                            Sin errores registrados.
                           </td>
                         </tr>
-                      ))}
+                      )}
                     </tbody>
                   </table>
                 </div>

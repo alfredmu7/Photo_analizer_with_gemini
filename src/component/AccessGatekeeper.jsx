@@ -6,8 +6,8 @@ const AccessGatekeeper = ({ onAccessGranted }) => {
   const [authError, setAuthError] = useState('');
 
   // --- CONFIGURACIÓN DE CREDENCIALES ---
-  const CLAVE_ACCESO_TOTAL = "Jci/*AdminFull2026";
-  const CLAVE_SOLO_WATERMARK = "Jci/*Watermark2026";
+  const CLAVE_ACCESO_TOTAL = "Admin";
+  const CLAVE_SOLO_WATERMARK = "MarcaAgua";
 
   const handleLogin = (e) => {
     e.preventDefault();
